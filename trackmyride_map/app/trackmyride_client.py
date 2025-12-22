@@ -80,8 +80,15 @@ def _extract_location_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     data = payload.get("data") or payload
     # Common TrackMyRide-style fields
-    latitude = data.get("latitude") or data.get("lat")
-    longitude = data.get("longitude") or data.get("lng") or data.get("lon")
+    latitude = data.get("latitude")
+    if latitude is None:
+        latitude = data.get("lat")
+
+    longitude = data.get("longitude")
+    if longitude is None:
+        longitude = data.get("lng")
+    if longitude is None:
+        longitude = data.get("lon")
 
     if latitude is None or longitude is None:
         raise ValueError("Payload missing latitude/longitude fields")
