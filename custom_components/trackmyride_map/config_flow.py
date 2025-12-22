@@ -143,7 +143,9 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             base_url = user_input.get(CONF_API_BASE_URL) or entry.data.get(
                 CONF_API_BASE_URL, DEFAULT_API_ENDPOINT
             )
-            api_key = user_input.get(CONF_API_KEY) or entry.data[CONF_API_KEY]
+            api_key = user_input.get(CONF_API_KEY) or entry.options.get(
+                CONF_API_KEY, entry.data[CONF_API_KEY]
+            )
             user_key = user_input[CONF_USER_KEY]
 
             try:
@@ -159,7 +161,14 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_API_KEY: api_key,
                     CONF_USER_KEY: user_key,
                 }
-                self.hass.config_entries.async_update_entry(entry, data=new_data)
+                new_options = {
+                    **entry.options,
+                    CONF_API_KEY: api_key,
+                    CONF_USER_KEY: user_key,
+                }
+                self.hass.config_entries.async_update_entry(
+                    entry, data=new_data, options=new_options
+                )
                 await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
@@ -171,7 +180,7 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): str,
                 vol.Optional(
                     CONF_API_KEY,
-                    default=entry.data.get(CONF_API_KEY),
+                    default=entry.options.get(CONF_API_KEY, entry.data.get(CONF_API_KEY)),
                 ): str,
                 vol.Required(CONF_USER_KEY): str,
             }
