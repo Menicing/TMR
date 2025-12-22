@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrackMyRide Map</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-o9N1j7kGStp5GI6K8twg3h6vQm2Ll32YJt0C+cJME6w="
+      crossorigin=""
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-color: #0b1724;
+        color: #eef1f6;
+      }
+      header {
+        padding: 1rem;
+        background: linear-gradient(120deg, #0f2a43, #153755);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.4rem;
+      }
+      #meta {
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+      #map {
+        height: calc(100vh - 96px);
+        width: 100%;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 0.85rem;
+      }
+      .marker-label {
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>TrackMyRide Map</h1>
+        <div id="meta">
+          Poll interval: {{ poll_interval }}s • Vehicles configured:
+          {{ vehicles | length }}
+        </div>
+      </div>
+      <div class="badge" id="last-updated">Waiting for first update…</div>
+    </header>
+    <div id="map"></div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-oP3S1smnKp0cLBKNo3S3+aZ3GYMgyQ6aU02z8g+mukY="
+      crossorigin=""
+    ></script>
+    <script>
+      const map = L.map("map", {
+        center: [0, 0],
+        zoom: 2,
+        zoomControl: true,
+      });
+
+      const tileLayer = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+          maxZoom: 19,
+        }
+      );
+      tileLayer.addTo(map);
+
+      const markers = new Map();
+      const paths = new Map();
+      const lastUpdated = document.getElementById("last-updated");
+
+      async function fetchVehicles() {
+        try {
+          const response = await fetch("api/vehicles");
+          if (!response.ok) throw new Error(`API returned ${response.status}`);
+          return await response.json();
+        } catch (error) {
+          console.error("Failed to fetch vehicles", error);
+          lastUpdated.textContent = "Error fetching data";
+          return [];
+        }
+      }
+
+      function upsertMarker(vehicle) {
+        if (!vehicle.last_position) return;
+        const { latitude, longitude, vehicle_id, speed_kmh } = vehicle.last_position;
+        const label = `${vehicle_id}${
+          speed_kmh ? ` • ${speed_kmh.toFixed(1)} km/h` : ""
+        }`;
+        if (markers.has(vehicle_id)) {
+          markers.get(vehicle_id).setLatLng([latitude, longitude]).setPopupContent(label);
+        } else {
+          const marker = L.marker([latitude, longitude]).bindPopup(label);
+          marker.addTo(map);
+          markers.set(vehicle_id, marker);
+        }
+      }
+
+      function updatePath(vehicle) {
+        if (!vehicle.history || vehicle.history.length === 0) return;
+        const coords = vehicle.history.map((point) => [
+          point.latitude,
+          point.longitude,
+        ]);
+        if (paths.has(vehicle.vehicle_id)) {
+          paths.get(vehicle.vehicle_id).setLatLngs(coords);
+        } else {
+          const polyline = L.polyline(coords, { color: "#32c5ff", weight: 4 });
+          polyline.addTo(map);
+          paths.set(vehicle.vehicle_id, polyline);
+        }
+      }
+
+      function focusMap(vehicles) {
+        const points = [];
+        vehicles.forEach((vehicle) => {
+          if (vehicle.last_position) {
+            points.push([
+              vehicle.last_position.latitude,
+              vehicle.last_position.longitude,
+            ]);
+          }
+        });
+        if (points.length) {
+          const bounds = L.latLngBounds(points);
+          map.fitBounds(bounds.pad(0.25));
+        }
+      }
+
+      async function refresh() {
+        const vehicles = await fetchVehicles();
+        vehicles.forEach((vehicle) => {
+          upsertMarker(vehicle);
+          updatePath(vehicle);
+        });
+        focusMap(vehicles);
+        lastUpdated.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
+      }
+
+      refresh();
+      setInterval(refresh, {{ poll_interval * 1000 }});
+    </script>
+  </body>
+</html>
