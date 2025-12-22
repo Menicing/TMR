@@ -72,54 +72,11 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
         previous = self.data or {}
 
         for raw_device in devices:
-            unique_id = str(raw_device.get("unique_id") or "").strip()
-            if not unique_id:
-                LOGGER.warning("Skipping device without unique_id: %s", raw_device)
+            normalized_entry = _normalize_device(raw_device, previous)
+            if not normalized_entry:
                 continue
-
-            name = raw_device.get("name") or f"TrackMyRide {unique_id}"
-            rego = raw_device.get("rego")
-            comms_delta = raw_device.get("comms_delta")
-
-            point = None
-            aa_data = raw_device.get("aaData")
-            if isinstance(aa_data, list) and aa_data:
-                first = aa_data[0]
-                if isinstance(first, dict):
-                    point = first
-
-            prev_entry = previous.get(unique_id, {})
-            lat = prev_entry.get("lat")
-            lon = prev_entry.get("lon")
-            speed_kmh = prev_entry.get("speed_kmh")
-            volts = prev_entry.get("volts")
-            timestamp_epoch = prev_entry.get("timestamp_epoch")
-
-            if point:
-                lat = _as_float(point.get("lat"), lat)
-                lon = _as_float(point.get("lng") or point.get("lon"), lon)
-                speed_kmh = _as_float(point.get("speed"), speed_kmh)
-                volts = _as_float(point.get("volts"), volts)
-                timestamp_epoch = _as_int(
-                    point.get("epoch") or raw_device.get("last_data_at_epoch"),
-                    fallback=timestamp_epoch,
-                )
-            else:
-                timestamp_epoch = _as_int(
-                    raw_device.get("last_data_at_epoch"), fallback=timestamp_epoch
-                )
-
-            normalized[unique_id] = {
-                "name": name,
-                "rego": rego,
-                "lat": lat,
-                "lon": lon,
-                "speed_kmh": speed_kmh,
-                "timestamp_epoch": timestamp_epoch,
-                "volts": volts,
-                "comms_delta": comms_delta,
-                "raw": raw_device,
-            }
+            unique_id, normalized_device = normalized_entry
+            normalized[unique_id] = normalized_device
 
         return normalized
 
@@ -171,3 +128,87 @@ def _as_int(value: Any, fallback: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _normalize_device(
+    raw_device: dict[str, Any], previous: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]] | None:
+    unique_id = str(raw_device.get("unique_id") or "").strip()
+    if not unique_id:
+        LOGGER.warning("Skipping device without unique_id: %s", raw_device)
+        return None
+
+    prev_entry = previous.get(unique_id, {})
+    name = raw_device.get("name") or f"TrackMyRide {unique_id}"
+    rego = raw_device.get("rego")
+    comms_delta = raw_device.get("comms_delta")
+
+    point = None
+    aa_data = raw_device.get("aaData")
+    if isinstance(aa_data, list) and aa_data:
+        first = aa_data[0]
+        if isinstance(first, dict):
+            point = first
+
+    lat = prev_entry.get("lat")
+    lon = prev_entry.get("lon")
+    speed_kmh = prev_entry.get("speed_kmh")
+    volts = _as_float(raw_device.get("volts"), prev_entry.get("volts"))
+    timestamp_epoch = prev_entry.get("timestamp_epoch")
+
+    odometer = _as_float(raw_device.get("odometer"), prev_entry.get("odometer"))
+    acc_counter = _as_float(
+        raw_device.get("acc_counter"), prev_entry.get("acc_counter")
+    )
+    external_power = _as_int(
+        raw_device.get("external_power"), prev_entry.get("external_power")
+    )
+    engine = _as_int(raw_device.get("engine"), prev_entry.get("engine"))
+    internal_battery = raw_device.get("internal_battery") or prev_entry.get(
+        "internal_battery"
+    )
+    zone_raw = raw_device.get("zone")
+    zone = zone_raw if isinstance(zone_raw, str) else ""
+    zone_ids = _parse_zone_ids(zone)
+
+    if point:
+        lat = _as_float(point.get("lat"), lat)
+        lon = _as_float(point.get("lng") or point.get("lon"), lon)
+        speed_kmh = _as_float(point.get("speed"), speed_kmh)
+        volts = _as_float(point.get("volts"), volts)
+        timestamp_epoch = _as_int(
+            point.get("epoch") or raw_device.get("last_data_at_epoch"),
+            fallback=timestamp_epoch,
+        )
+    else:
+        timestamp_epoch = _as_int(
+            raw_device.get("last_data_at_epoch"), fallback=timestamp_epoch
+        )
+
+    normalized = {
+        "name": name,
+        "rego": rego,
+        "lat": lat,
+        "lon": lon,
+        "speed_kmh": speed_kmh,
+        "timestamp_epoch": timestamp_epoch,
+        "volts": volts,
+        "comms_delta": comms_delta,
+        "odometer": odometer,
+        "acc_counter": acc_counter,
+        "external_power": external_power,
+        "engine": engine,
+        "internal_battery": internal_battery,
+        "zone": zone,
+        "zone_ids": zone_ids,
+        "zone_count": len(zone_ids),
+        "raw": raw_device,
+    }
+    return unique_id, normalized
+
+
+def _parse_zone_ids(zone: str) -> list[str]:
+    if not zone:
+        return []
+    parts = [part.strip() for part in zone.split(",")]
+    return [part for part in parts if part]

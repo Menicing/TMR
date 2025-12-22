@@ -156,9 +156,7 @@ class TrackMyRideClient:
 
         return payload if isinstance(payload, dict) else {"data": payload}
 
-    def _log_shape(
-        self, module: str, action: str, status: int, payload: Any
-    ) -> None:
+    def _log_shape(self, module: str, action: str, status: int, payload: Any) -> None:
         """Log a brief shape summary without secrets."""
         summary = ""
         if isinstance(payload, dict):

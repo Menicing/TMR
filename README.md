@@ -1,5 +1,7 @@
 # TrackMyRide Map – Home Assistant Custom Integration
 
+![TrackMyRide icon](custom_components/trackmyride_map/icon.png)
+
 This repository provides a **Home Assistant custom integration** (HACS-style) that creates `device_tracker` entities for TrackMyRide vehicles so they appear on the Home Assistant map. It runs entirely inside Home Assistant—no Supervisor add-on or extra Docker container is required.
 
 > The previous Supervisor add-on has been archived under [`addon_archive/`](addon_archive/). Use this integration instead.
@@ -29,6 +31,11 @@ The integration uses Home Assistant Config Entries with an Options flow:
   - `latitude`/`longitude`, `source_type = gps`
   - Attributes: `speed_kmh`, `volts`, `comms_delta`, `rego`, `last_update_epoch`
 - Unique IDs come directly from the TrackMyRide `unique_id` field.
+- Additional entities per vehicle:
+  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes).
+  - Binary sensors: `External Power` (power) and `Engine` (running).
+
+> If icons are missing, ensure `icon.png`/`logo.png` exist in `custom_components/trackmyride_map` (add the binary files via normal git/GitHub upload outside Codex).
 
 ## Troubleshooting
 

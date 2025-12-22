@@ -76,7 +76,11 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
 
     @property
     def _vehicle(self) -> dict | None:
-        return self.coordinator.data.get(self._vehicle_id) if self.coordinator.data else None
+        return (
+            self.coordinator.data.get(self._vehicle_id)
+            if self.coordinator.data
+            else None
+        )
 
     @property
     def latitude(self) -> float | None:
