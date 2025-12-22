@@ -161,16 +161,162 @@ def _prime_stub_modules():
     class DeviceEntryType:
         SERVICE = "service"
 
+    class DeviceEntry:
+        def __init__(
+            self,
+            *,
+            id=None,
+            identifiers=None,
+            entry_type=None,
+            manufacturer=None,
+            model=None,
+            name=None,
+        ):
+            self.id = id
+            self.identifiers = identifiers or set()
+            self.entry_type = entry_type
+            self.manufacturer = manufacturer
+            self.model = model
+            self.name = name
+
+    class DeviceRegistry:
+        def __init__(self):
+            self._devices = {}
+            self._next_id = 1
+
+        def async_get_device(self, identifiers=None, connections=None):
+            identifiers = identifiers or set()
+            for device in self._devices.values():
+                if device.identifiers == identifiers:
+                    return device
+            return None
+
+        def async_get_or_create_device(self, *, identifiers=None, **kwargs):
+            device = self.async_get_device(identifiers=identifiers)
+            if device:
+                return device
+            device_id = f"device_{self._next_id}"
+            self._next_id += 1
+            device = DeviceEntry(
+                id=device_id,
+                identifiers=identifiers or set(),
+                **kwargs,
+            )
+            self._devices[device_id] = device
+            return device
+
+        def async_update_device(self, device_id, **kwargs):
+            device = self._devices.get(device_id)
+            if not device:
+                return None
+            for key, value in kwargs.items():
+                setattr(device, key, value)
+            return device
+
+    _device_registry_singleton = DeviceRegistry()
+
+    def async_get_device_registry(hass):
+        return _device_registry_singleton
+
     device_registry.DeviceEntryType = DeviceEntryType
+    device_registry.DeviceEntry = DeviceEntry
+    device_registry.DeviceRegistry = DeviceRegistry
+    device_registry.async_get = async_get_device_registry
+    device_registry._device_registry_singleton = _device_registry_singleton
     helpers.device_registry = device_registry
     sys.modules["homeassistant.helpers.device_registry"] = device_registry
+
+    entity_registry = ModuleType("homeassistant.helpers.entity_registry")
+
+    class EntityRegistryEntry:
+        def __init__(
+            self,
+            *,
+            entity_id,
+            unique_id,
+            config_entry_id=None,
+            platform=None,
+            original_name=None,
+            name=None,
+            device_id=None,
+        ):
+            self.entity_id = entity_id
+            self.unique_id = unique_id
+            self.config_entry_id = config_entry_id
+            self.platform = platform
+            self.original_name = original_name
+            self.name = name
+            self.device_id = device_id
+
+    class EntityRegistry:
+        def __init__(self):
+            self._entities = {}
+
+        def async_get_or_create(
+            self,
+            domain,
+            platform,
+            unique_id,
+            *,
+            config_entry=None,
+            suggested_object_id=None,
+            device_id=None,
+            name=None,
+        ):
+            entity_id = f"{domain}.{suggested_object_id or unique_id}"
+            entry = EntityRegistryEntry(
+                entity_id=entity_id,
+                unique_id=unique_id,
+                config_entry_id=getattr(config_entry, "entry_id", None),
+                platform=platform,
+                name=name,
+                device_id=device_id,
+            )
+            self._entities[entity_id] = entry
+            return entry
+
+        def async_update_entity(self, entity_id, **kwargs):
+            entry = self._entities.get(entity_id)
+            if not entry:
+                return None
+            for key, value in kwargs.items():
+                setattr(entry, key, value)
+            return entry
+
+        def async_entries_for_config_entry(self, config_entry_id):
+            return [
+                entry
+                for entry in self._entities.values()
+                if entry.config_entry_id == config_entry_id
+            ]
+
+        def get(self, entity_id):
+            return self._entities.get(entity_id)
+
+    _entity_registry_singleton = EntityRegistry()
+
+    def async_get_entity_registry(hass):
+        return _entity_registry_singleton
+
+    entity_registry.EntityRegistryEntry = EntityRegistryEntry
+    entity_registry.EntityRegistry = EntityRegistry
+    entity_registry.async_get = async_get_entity_registry
+    entity_registry.async_entries_for_config_entry = (
+        lambda registry, entry_id: registry.async_entries_for_config_entry(entry_id)
+    )
+    entity_registry._entity_registry_singleton = _entity_registry_singleton
+    helpers.entity_registry = entity_registry
+    sys.modules["homeassistant.helpers.entity_registry"] = entity_registry
 
     entity_mod = ModuleType("homeassistant.helpers.entity")
 
     class DeviceInfo:
         def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
+            self.identifiers = kwargs.get("identifiers")
+            self.name = kwargs.get("name")
+            self.manufacturer = kwargs.get("manufacturer")
+            self.model = kwargs.get("model")
+            self.entry_type = kwargs.get("entry_type")
 
     entity_mod.DeviceInfo = DeviceInfo
     entity_mod.DeviceEntryType = DeviceEntryType
@@ -345,3 +491,11 @@ def stub_homeassistant(monkeypatch):
         "homeassistant.helpers.aiohttp_client",
         sys.modules["homeassistant.helpers.aiohttp_client"],
     )
+
+    device_registry = sys.modules["homeassistant.helpers.device_registry"]
+    if hasattr(device_registry, "_device_registry_singleton"):
+        device_registry._device_registry_singleton._devices = {}
+        device_registry._device_registry_singleton._next_id = 1
+    entity_registry = sys.modules["homeassistant.helpers.entity_registry"]
+    if hasattr(entity_registry, "_entity_registry_singleton"):
+        entity_registry._entity_registry_singleton._entities = {}

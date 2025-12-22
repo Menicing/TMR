@@ -11,7 +11,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -77,6 +76,7 @@ class TrackMyRideSensorBase(CoordinatorEntity[DataUpdateCoordinator], SensorEnti
         self._label = label
         self._attr_unique_id = f"{vehicle_id}_{metric_key}"
         self._entry = entry
+        self._attr_name = label
 
     @property
     def _vehicle(self) -> dict[str, Any] | None:
@@ -87,18 +87,12 @@ class TrackMyRideSensorBase(CoordinatorEntity[DataUpdateCoordinator], SensorEnti
         )
 
     @property
-    def _device_name(self) -> str:
-        if not self._vehicle:
-            return f"TrackMyRide {self._vehicle_id}"
-        return self._vehicle.get("name") or f"TrackMyRide {self._vehicle_id}"
+    def available(self) -> bool:
+        return self._vehicle is not None
 
     @property
     def name(self) -> str | None:
-        return f"{self._device_name} {self._label}"
-
-    @property
-    def available(self) -> bool:
-        return self._vehicle is not None
+        return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
@@ -110,9 +104,10 @@ class TrackMyRideSensorBase(CoordinatorEntity[DataUpdateCoordinator], SensorEnti
             return None
         return DeviceInfo(
             identifiers={(DOMAIN, self._vehicle_id)},
-            name=self._device_name,
+            name=self._vehicle.get("name")
+            or f"TrackMyRide {self._vehicle_id}",
             manufacturer="TrackMyRide",
-            entry_type=DeviceEntryType.SERVICE,
+            model="Tracker",
         )
 
 

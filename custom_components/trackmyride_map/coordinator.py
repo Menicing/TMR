@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TrackMyRideAuthError, TrackMyRideClient, TrackMyRideEndpointError
+from .util import format_comms_delta
 from .const import (
     CONF_IDENTITY_FIELD,
     CONF_MINUTES_WINDOW,
@@ -175,7 +176,7 @@ def _normalize_device(
     prev_entry = previous.get(unique_id, {})
     name = raw_device.get("name") or f"TrackMyRide {unique_id}"
     rego = raw_device.get("rego")
-    comms_delta = raw_device.get("comms_delta")
+    comms_delta = _as_int(raw_device.get("comms_delta"), prev_entry.get("comms_delta"))
 
     point = None
     aa_data = raw_device.get("aaData")
@@ -236,6 +237,8 @@ def _normalize_device(
         "timestamp_dt_utc": timestamp_dt_utc,
         "volts": volts,
         "comms_delta": comms_delta,
+        "comms_delta_seconds": max(comms_delta - 1, 0) if comms_delta is not None else None,
+        "comms_delta_readable": format_comms_delta(comms_delta),
         "odometer": odometer,
         "acc_counter": acc_counter,
         "acc_counter_timedelta": acc_counter_timedelta,

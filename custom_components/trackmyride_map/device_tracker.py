@@ -8,7 +8,6 @@ from homeassistant.components.device_tracker.const import SourceType
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -58,7 +57,7 @@ async def async_setup_entry(
 class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], TrackerEntity):
     """Representation of a TrackMyRide vehicle."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_icon = "mdi:car-connected"
 
     def __init__(
@@ -106,6 +105,8 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             "speed_kmh": self._vehicle.get("speed_kmh"),
             "volts": self._vehicle.get("volts"),
             "comms_delta": self._vehicle.get("comms_delta"),
+            "comms_delta_seconds": self._vehicle.get("comms_delta_seconds"),
+            "comms_delta_readable": self._vehicle.get("comms_delta_readable"),
             "rego": self._vehicle.get("rego"),
             "last_update": self._vehicle.get("timestamp_dt_utc"),
             "last_update_epoch": self._vehicle.get("timestamp_epoch"),
@@ -129,5 +130,5 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             identifiers={(DOMAIN, self._vehicle_id)},
             name=self.name,
             manufacturer="TrackMyRide",
-            entry_type=DeviceEntryType.SERVICE,
+            model="Tracker",
         )

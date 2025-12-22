@@ -73,6 +73,9 @@ def test_normalisation_includes_new_fields():
     assert data["timestamp_dt_utc"].isoformat() == "2023-11-14T22:13:20+00:00"
     assert data["acc_counter_timedelta"].total_seconds() == pytest.approx(738)
     assert data["acc_counter_str"] == "0:12:18"
+    assert data["comms_delta"] == 10
+    assert data["comms_delta_seconds"] == 9
+    assert data["comms_delta_readable"] == "9 seconds"
 
 
 def test_zone_parsing():
