@@ -30,11 +30,27 @@ def _redact(value: str) -> str:
     return f"{value[:2]}***{value[-2:]}"
 
 
-def _validate_endpoint(url: str) -> str:
-    """Ensure the URL matches the documented API endpoint."""
+def normalize_endpoint(url: str) -> str:
+    """Ensure the URL uses the documented API endpoint."""
+
     if not url:
         raise TrackMyRideEndpointError("Empty endpoint")
+
     normalized = url.strip()
+    if normalized.endswith("/v2/php/api.php"):
+        return normalized
+
+    trimmed = normalized.rstrip("/")
+    if trimmed.endswith("/v2/php/api.php"):
+        return trimmed
+
+    return f"{trimmed}/v2/php/api.php"
+
+
+def _validate_endpoint(url: str) -> str:
+    """Normalise the URL to the documented API endpoint."""
+
+    normalized = normalize_endpoint(url)
     if not normalized.endswith("/v2/php/api.php"):
         raise TrackMyRideEndpointError("Endpoint must end with /v2/php/api.php")
     return normalized

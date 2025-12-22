@@ -29,7 +29,8 @@ from .const import (
 class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TrackMyRide Map."""
 
-    VERSION = 2
+    VERSION = 3
+    _reauth_entry: config_entries.ConfigEntry | None = None
 
     async def async_step_user(self, user_input: dict | None = None):
         """Handle the initial step."""
@@ -94,6 +95,68 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         return TrackMyRideOptionsFlowHandler(config_entry)
+
+    async def async_step_reauth(self, entry_data: dict | None = None):
+        """Handle initiation of re-authentication."""
+
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict | None = None):
+        """Handle the re-auth step where the user provides updated credentials."""
+
+        errors: dict[str, str] = {}
+        assert self._reauth_entry is not None
+        entry = self._reauth_entry
+
+        if user_input is not None:
+            base_url = user_input.get(CONF_API_BASE_URL) or entry.data.get(
+                CONF_API_BASE_URL, DEFAULT_API_ENDPOINT
+            )
+            api_key = user_input.get(CONF_API_KEY) or entry.data[CONF_API_KEY]
+            user_key = user_input[CONF_USER_KEY]
+
+            try:
+                client = TrackMyRideClient(self.hass, base_url, api_key, user_key)
+                await client.async_test_connection()
+            except TrackMyRideEndpointError:
+                errors["base"] = "invalid_endpoint"
+            except TrackMyRideAuthError:
+                errors["base"] = "invalid_auth"
+            except ClientError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # pylint: disable=broad-except
+                errors["base"] = "unknown"
+
+            if not errors:
+                new_data = {
+                    **entry.data,
+                    CONF_API_BASE_URL: client.endpoint,
+                    CONF_API_KEY: api_key,
+                    CONF_USER_KEY: user_key,
+                }
+                self.hass.config_entries.async_update_entry(entry, data=new_data)
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_API_BASE_URL,
+                    default=entry.data.get(CONF_API_BASE_URL, DEFAULT_API_ENDPOINT),
+                ): str,
+                vol.Optional(
+                    CONF_API_KEY,
+                    default=entry.data.get(CONF_API_KEY),
+                ): str,
+                vol.Required(CONF_USER_KEY): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm", data_schema=data_schema, errors=errors
+        )
 
 
 class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):

@@ -10,7 +10,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
-from .api import TrackMyRideClient
+from .api import TrackMyRideClient, normalize_endpoint
 from .const import (
     CONF_ACCOUNT_ID,
     CONF_API_BASE_URL,
@@ -43,6 +43,21 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.version = 2
         hass.config_entries.async_update_entry(entry, data=new_data)
         LOGGER.info("Migration to version 2 complete; reconfigure if authentication fails")
+    if entry.version < 3:
+        LOGGER.info("Migrating TrackMyRide entry from version %s", entry.version)
+        new_data = {**entry.data}
+        try:
+            new_data[CONF_API_BASE_URL] = normalize_endpoint(
+                entry.data.get(CONF_API_BASE_URL) or DEFAULT_API_ENDPOINT
+            )
+        except Exception:  # pylint: disable=broad-except
+            LOGGER.warning(
+                "Failed to normalize TrackMyRide API endpoint for entry %s; keeping original",
+                entry.entry_id,
+            )
+        entry.version = 3
+        hass.config_entries.async_update_entry(entry, data=new_data)
+        LOGGER.info("Migration to version 3 complete")
     return True
 
 
