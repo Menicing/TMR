@@ -77,6 +77,8 @@ class TrackMyRideSensorBase(CoordinatorEntity[DataUpdateCoordinator], SensorEnti
         self._attr_unique_id = f"{vehicle_id}_{metric_key}"
         self._entry = entry
         self._attr_name = label
+        self._last_native_value: Any | None = None
+        self._last_attrs: dict[str, Any] | None = None
 
     @property
     def _vehicle(self) -> dict[str, Any] | None:
@@ -109,6 +111,20 @@ class TrackMyRideSensorBase(CoordinatorEntity[DataUpdateCoordinator], SensorEnti
             manufacturer="TrackMyRide",
             model="Tracker",
         )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Write state only when changed."""
+        state = self.native_value
+        try:
+            attrs = dict(self.extra_state_attributes or {})
+        except AttributeError:
+            attrs = {}
+        if state == self._last_native_value and attrs == (self._last_attrs or {}):
+            return
+        self._last_native_value = state
+        self._last_attrs = attrs
+        self.async_write_ha_state()
 
 
 class TrackMyRideOdometerSensor(TrackMyRideSensorBase):

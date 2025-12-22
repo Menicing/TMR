@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "trackmyride_map"
-DEFAULT_NAME = "TrackMyRide Map"
+DEFAULT_NAME = "Track My Ride"
 
 CONF_API_BASE_URL = "api_base_url"
 CONF_API_KEY = "api_key"

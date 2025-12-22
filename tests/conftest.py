@@ -411,14 +411,34 @@ def _prime_stub_modules():
     if "voluptuous" not in sys.modules:
         vol = ModuleType("voluptuous")
 
+        class _Schema:
+            def __init__(self, schema):
+                self.schema = schema
+
+            def __call__(self, value):
+                return value
+
+        class _Marker:
+            def __init__(self, schema, default=None):
+                self.schema = schema
+                self.default = default
+
+            def __hash__(self):
+                return hash((self.schema, self.default))
+
+            def __eq__(self, other):
+                if not isinstance(other, _Marker):
+                    return False
+                return (self.schema, self.default) == (other.schema, other.default)
+
         def Schema(value):
-            return value
+            return _Schema(value)
 
         def Optional(key, default=None):
-            return key
+            return _Marker(key, default)
 
         def Required(key, default=None):
-            return key
+            return _Marker(key, default)
 
         def In(options):
             def _validator(value):

@@ -86,8 +86,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     config: dict[str, Any] = {
         CONF_API_BASE_URL: entry.data[CONF_API_BASE_URL],
-        CONF_API_KEY: entry.data[CONF_API_KEY],
-        CONF_USER_KEY: entry.data.get(CONF_USER_KEY),
+        CONF_API_KEY: entry.options.get(CONF_API_KEY, entry.data[CONF_API_KEY]),
+        CONF_USER_KEY: entry.options.get(CONF_USER_KEY, entry.data.get(CONF_USER_KEY)),
         CONF_ACCOUNT_ID: entry.data.get(CONF_ACCOUNT_ID),
         CONF_IDENTITY_FIELD: entry.options.get(CONF_IDENTITY_FIELD)
         or entry.data.get(CONF_IDENTITY_FIELD),

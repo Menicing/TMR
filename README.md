@@ -1,4 +1,4 @@
-# TrackMyRide Map – Home Assistant Custom Integration
+# Track My Ride Map – Home Assistant Custom Integration
 
 ![TrackMyRide icon](custom_components/trackmyride_map/icon.png)
 
@@ -29,7 +29,7 @@ The integration uses Home Assistant Config Entries with an Options flow:
 
 - One `device_tracker` entity is created per vehicle with:
   - `latitude`/`longitude`, `source_type = gps`
-  - Attributes: `speed_kmh`, `volts`, `comms_delta`, `rego`, `last_update_epoch`
+  - Attributes: `speed_kmh`, `volts`, `last_comms`, `rego`, `last_update`
 - Unique IDs come directly from the TrackMyRide `unique_id` field.
 - Additional entities per vehicle:
   - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes).

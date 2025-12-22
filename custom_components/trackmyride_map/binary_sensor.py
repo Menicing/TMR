@@ -77,6 +77,7 @@ class TrackMyRideBinarySensorBase(
         self._attr_unique_id = f"{vehicle_id}_{metric_key}"
         self._entry = entry
         self._attr_name = label
+        self._last_state: Any | None = None
 
     @property
     def _vehicle(self) -> dict[str, Any] | None:
@@ -109,6 +110,15 @@ class TrackMyRideBinarySensorBase(
             manufacturer="TrackMyRide",
             model="Tracker",
         )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Write state only when changed."""
+        state = self.is_on
+        if state == self._last_state:
+            return
+        self._last_state = state
+        self.async_write_ha_state()
 
 
 class TrackMyRideExternalPowerBinarySensor(TrackMyRideBinarySensorBase):
