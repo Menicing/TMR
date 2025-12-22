@@ -9,8 +9,11 @@ from custom_components.trackmyride_map.binary_sensor import (
     TrackMyRideExternalPowerBinarySensor,
 )
 from custom_components.trackmyride_map.coordinator import (
+    _as_datetime_from_epoch,
+    _minutes_to_timedelta,
     _normalize_device,
     _parse_zone_ids,
+    _parse_zone_map,
 )
 from custom_components.trackmyride_map.sensor import (
     TrackMyRideAccCounterSensor,
@@ -60,18 +63,47 @@ def test_normalisation_includes_new_fields():
     assert data["zone"] == "zone-a, zone-b,"
     assert data["zone_ids"] == ["zone-a", "zone-b"]
     assert data["zone_count"] == 2
+    assert data["zone_names"] == ["zone-a", "zone-b"]
+    assert data["zone_state"] == "zone-a, zone-b"
     assert data["volts"] == pytest.approx(12.5)
     assert data["lat"] == pytest.approx(1.23)
     assert data["lon"] == pytest.approx(4.56)
     assert data["speed_kmh"] == pytest.approx(78)
     assert data["timestamp_epoch"] == 1700000000
+    assert data["timestamp_dt_utc"].isoformat() == "2023-11-14T22:13:20+00:00"
+    assert data["acc_counter_timedelta"].total_seconds() == pytest.approx(738)
+    assert data["acc_counter_str"] == "0:12:18"
 
 
 def test_zone_parsing():
     """Zone strings are split, trimmed, and empties removed."""
+    assert _parse_zone_ids("") == []
+    assert _parse_zone_ids("abc") == ["abc"]
     zone_ids = _parse_zone_ids("abc, def,,ghi ")
     assert zone_ids == ["abc", "def", "ghi"]
     assert len(zone_ids) == 3
+
+
+def test_zone_map_parsing_from_featurecollection():
+    """Zones feature collection is mapped to a zone id -> name dict."""
+    payload = {
+        "features": [
+            {"id": "Z1", "properties": {"name": "Depot"}},
+            {"id": "Z2", "properties": {"name": "Mine"}},
+        ]
+    }
+    assert _parse_zone_map(payload) == {"Z1": "Depot", "Z2": "Mine"}
+
+
+def test_zone_names_rendering_with_fallback():
+    """Zone names are resolved with fallback to id and rendered to state."""
+    raw_device = {"unique_id": "veh123", "zone": "Z1,Z9"}
+    normalized = _normalize_device(raw_device, {}, {"Z1": "Depot"})
+    assert normalized is not None
+    _, data = normalized
+    assert data["zone_ids"] == ["Z1", "Z9"]
+    assert data["zone_names"] == ["Depot", "Z9"]
+    assert data["zone_state"] == "Depot, Z9"
 
 
 def test_entity_unique_ids_stable():
@@ -126,3 +158,31 @@ def test_boolean_fields_map_to_binary_state():
 
     assert external_power.is_on is True
     assert engine.is_on is False
+
+
+def test_volts_rounding_two_decimals():
+    """Voltage sensor rounds to two decimals while staying numeric."""
+    coordinator = _make_coordinator({"veh1": {"name": "Vehicle", "volts": 12.3456}})
+    entry = _FakeConfigEntry()
+    sensor = TrackMyRideVoltsSensor(coordinator, entry, "veh1")
+    assert sensor.native_value == pytest.approx(12.35)
+
+    coordinator.data["veh1"]["volts"] = 12.3
+    assert sensor.native_value == pytest.approx(12.3)
+
+    coordinator.data["veh1"]["volts"] = None
+    assert sensor.native_value is None
+
+
+def test_epoch_to_utc_datetime():
+    """Epoch seconds convert to aware UTC datetime."""
+    dt = _as_datetime_from_epoch(1_700_000_000)
+    assert dt.tzinfo is not None
+    assert dt.isoformat() == "2023-11-14T22:13:20+00:00"
+
+
+def test_duration_minutes_to_timedelta():
+    """Minutes values convert to timedelta and readable string."""
+    td = _minutes_to_timedelta(12.3)
+    assert td.total_seconds() == pytest.approx(738)
+    assert str(td) == "0:12:18"

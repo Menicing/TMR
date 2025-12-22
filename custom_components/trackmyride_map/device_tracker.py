@@ -107,6 +107,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             "volts": self._vehicle.get("volts"),
             "comms_delta": self._vehicle.get("comms_delta"),
             "rego": self._vehicle.get("rego"),
+            "last_update": self._vehicle.get("timestamp_dt_utc"),
             "last_update_epoch": self._vehicle.get("timestamp_epoch"),
         }
 

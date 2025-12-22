@@ -157,7 +157,13 @@ class TrackMyRideVoltsSensor(TrackMyRideSensorBase):
     def native_value(self) -> float | None:
         if not self._vehicle:
             return None
-        return self._vehicle.get("volts")
+        value = self._vehicle.get("volts")
+        if value is None:
+            return None
+        try:
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
 
 
 class TrackMyRideAccCounterSensor(TrackMyRideSensorBase):
@@ -181,6 +187,15 @@ class TrackMyRideAccCounterSensor(TrackMyRideSensorBase):
         if not self._vehicle:
             return None
         return self._vehicle.get("acc_counter")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        if not self._vehicle:
+            return {}
+        return {
+            "acc_counter_timedelta": self._vehicle.get("acc_counter_timedelta"),
+            "acc_counter_str": self._vehicle.get("acc_counter_str"),
+        }
 
 
 class TrackMyRideInternalBatterySensor(TrackMyRideSensorBase):
@@ -218,13 +233,14 @@ class TrackMyRideZoneSensor(TrackMyRideSensorBase):
     def native_value(self) -> str:
         if not self._vehicle:
             return ""
-        return self._vehicle.get("zone") or ""
+        return self._vehicle.get("zone_state") or ""
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         if not self._vehicle:
-            return {"zone_ids": [], "zone_count": 0}
+            return {"zone_ids": [], "zone_names": [], "zone_count": 0}
         return {
             "zone_ids": self._vehicle.get("zone_ids", []),
+            "zone_names": self._vehicle.get("zone_names", []),
             "zone_count": self._vehicle.get("zone_count", 0),
         }
