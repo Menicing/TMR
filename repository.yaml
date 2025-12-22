@@ -1,0 +1,6 @@
+name: TrackMyRide Home Assistant Add-ons
+url: https://example.com/tmr
+maintainer: TrackMyRide Integrations <support@trackmyride.example>
+source: local
+slug: tmr-addons
+description: Home Assistant add-ons for integrating TrackMyRide map tracking.
