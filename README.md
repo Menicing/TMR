@@ -12,8 +12,14 @@ This repository contains a Home Assistant add-on that surfaces live and historic
 
 1. In Home Assistant, open **Settings → Add-ons → Add-on Store** and choose **⋮ → Repositories**.
 2. Add the URL for this repository (or copy the repository folder into your local `addons/` directory when developing).
-3. Install the **TrackMyRide Map** add-on.
+3. Install the **TrackMyRide Map** add-on. Home Assistant will build the image locally from this repository’s Dockerfile; no prebuilt GHCR image is required.
 4. Configure your TrackMyRide API settings and vehicle IDs, then start the add-on.
+
+### Image build notes
+
+- The add-on is configured for a local build via Home Assistant Supervisor (see `build: .` in `config.yaml`), which avoids authentication issues pulling from GHCR.
+- Architectures supported by the add-on manifest are `amd64`, `armv7`, and `aarch64` to cover common Home Assistant deployments (including Raspberry Pi 64-bit).
+- If you want to publish prebuilt images, push them to a public namespace such as `ghcr.io/menicing/trackmyride-map-{arch}` and update `config.yaml` accordingly, but local builds remain the default.
 
 ## Add-on configuration
 
@@ -47,4 +53,3 @@ The add-on exposes the following options (stored in `/data/options.json` inside 
   uvicorn app.main:app --host 0.0.0.0 --port 8099
   ```
 - Home Assistant’s build system injects the appropriate base image via the `BUILD_FROM` argument defined in `config.yaml`.
-

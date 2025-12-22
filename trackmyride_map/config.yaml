@@ -1,11 +1,12 @@
 name: TrackMyRide Map
-version: "1.0.1"
+version: "1.0.2"
 slug: trackmyride_map
 description: Map tracking add-on for the TrackMyRide API.
 arch:
   - amd64
   - armv7
   - aarch64
+build: .
 startup: services
 boot: auto
 ingress: true
@@ -32,4 +33,3 @@ schema:
   poll_interval: int
   track_history_minutes: int
   enable_debug: bool
-image: "ghcr.io/local/trackmyride-map-{arch}"
