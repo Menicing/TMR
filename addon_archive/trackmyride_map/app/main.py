@@ -77,7 +77,10 @@ class TrackerService:
             state = self.states.setdefault(vehicle_id, VehicleState(vehicle_id))
             state.add_position(position, self.settings.track_history_minutes)
             LOGGER.debug(
-                "Updated %s to (%s, %s)", vehicle_id, position.latitude, position.longitude
+                "Updated %s to (%s, %s)",
+                vehicle_id,
+                position.latitude,
+                position.longitude,
             )
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Failed to poll %s: %s", vehicle_id, exc)

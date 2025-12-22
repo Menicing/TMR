@@ -20,6 +20,7 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_USER_KEY,
     COORDINATOR,
+    DEFAULT_API_ENDPOINT,
     DEFAULT_MINUTES,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -29,7 +30,11 @@ from .coordinator import TrackMyRideDataCoordinator
 
 LOGGER = logging.getLogger(LOGGER_NAME)
 
-PLATFORMS: list[Platform] = [Platform.DEVICE_TRACKER]
+PLATFORMS: list[Platform] = [
+    Platform.DEVICE_TRACKER,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+]
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -42,7 +47,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_data.setdefault(CONF_USER_KEY, "")
         entry.version = 2
         hass.config_entries.async_update_entry(entry, data=new_data)
-        LOGGER.info("Migration to version 2 complete; reconfigure if authentication fails")
+        LOGGER.info(
+            "Migration to version 2 complete; reconfigure if authentication fails"
+        )
     if entry.version < 3:
         LOGGER.info("Migrating TrackMyRide entry from version %s", entry.version)
         new_data = {**entry.data}

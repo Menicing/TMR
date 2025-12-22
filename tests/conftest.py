@@ -85,6 +85,8 @@ def _prime_stub_modules():
 
     class Platform(str):
         DEVICE_TRACKER = "device_tracker"
+        SENSOR = "sensor"
+        BINARY_SENSOR = "binary_sensor"
 
     const.Platform = Platform
 
@@ -116,15 +118,132 @@ def _prime_stub_modules():
     update_coordinator = ModuleType("homeassistant.helpers.update_coordinator")
 
     class DataUpdateCoordinator:
+        def __init__(self, hass=None, logger=None, name=None, update_interval=None):
+            self.hass = hass
+            self.logger = logger
+            self.name = name
+            self.update_interval = update_interval
+            self.data = None
+            self._listeners = []
+
         def __class_getitem__(cls, item):
             return cls
+
+        def async_add_listener(self, listener):
+            self._listeners.append(listener)
+            return lambda: None
+
+        def async_set_updated_data(self, data):
+            self.data = data
+            for listener in list(self._listeners):
+                listener()
 
     class UpdateFailed(Exception):
         pass
 
+    class CoordinatorEntity:
+        def __init__(self, coordinator=None):
+            self.coordinator = coordinator
+
+        def async_write_ha_state(self):
+            return None
+
+        def __class_getitem__(cls, item):
+            return cls
+
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = UpdateFailed
+    update_coordinator.CoordinatorEntity = CoordinatorEntity
     helpers.update_coordinator = update_coordinator
+
+    device_registry = ModuleType("homeassistant.helpers.device_registry")
+
+    class DeviceEntryType:
+        SERVICE = "service"
+
+    device_registry.DeviceEntryType = DeviceEntryType
+    helpers.device_registry = device_registry
+    sys.modules["homeassistant.helpers.device_registry"] = device_registry
+
+    entity_mod = ModuleType("homeassistant.helpers.entity")
+
+    class DeviceInfo:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    entity_mod.DeviceInfo = DeviceInfo
+    entity_mod.DeviceEntryType = DeviceEntryType
+    helpers.entity = entity_mod
+    sys.modules["homeassistant.helpers.entity"] = entity_mod
+
+    entity_platform = ModuleType("homeassistant.helpers.entity_platform")
+
+    def _add_entities_stub(entities, **kwargs):
+        return entities
+
+    entity_platform.AddEntitiesCallback = _add_entities_stub
+    helpers.entity_platform = entity_platform
+    sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
+
+    device_tracker_const = ModuleType("homeassistant.components.device_tracker.const")
+
+    class SourceType(str):
+        GPS = "gps"
+
+    device_tracker_const.SourceType = SourceType
+    sys.modules["homeassistant.components.device_tracker.const"] = device_tracker_const
+
+    device_tracker_config = ModuleType(
+        "homeassistant.components.device_tracker.config_entry"
+    )
+
+    class TrackerEntity:
+        pass
+
+    device_tracker_config.TrackerEntity = TrackerEntity
+    sys.modules["homeassistant.components.device_tracker.config_entry"] = (
+        device_tracker_config
+    )
+
+    sensor_mod = ModuleType("homeassistant.components.sensor")
+
+    class SensorDeviceClass:
+        DISTANCE = "distance"
+        VOLTAGE = "voltage"
+
+    class SensorStateClass:
+        MEASUREMENT = "measurement"
+        TOTAL_INCREASING = "total_increasing"
+        TOTAL = "total"
+
+    class SensorEntity:
+        _attr_native_unit_of_measurement = None
+        _attr_device_class = None
+        _attr_state_class = None
+
+        def __init__(self):
+            self._attr_native_unit_of_measurement = getattr(
+                self, "_attr_native_unit_of_measurement", None
+            )
+
+    sensor_mod.SensorDeviceClass = SensorDeviceClass
+    sensor_mod.SensorStateClass = SensorStateClass
+    sensor_mod.SensorEntity = SensorEntity
+    sys.modules["homeassistant.components.sensor"] = sensor_mod
+
+    binary_sensor_mod = ModuleType("homeassistant.components.binary_sensor")
+
+    class BinarySensorDeviceClass:
+        POWER = "power"
+        RUNNING = "running"
+
+    class BinarySensorEntity:
+        _attr_device_class = None
+
+    binary_sensor_mod.BinarySensorDeviceClass = BinarySensorDeviceClass
+    binary_sensor_mod.BinarySensorEntity = BinarySensorEntity
+    sys.modules["homeassistant.components.binary_sensor"] = binary_sensor_mod
 
     sys.modules["homeassistant"] = ha
     sys.modules["homeassistant.config_entries"] = config_entries
@@ -205,14 +324,22 @@ def stub_homeassistant(monkeypatch):
     # Refresh modules via monkeypatch to ensure isolation.
     monkeypatch.setitem(sys.modules, "homeassistant", sys.modules["homeassistant"])
     monkeypatch.setitem(
-        sys.modules, "homeassistant.config_entries", sys.modules["homeassistant.config_entries"]
+        sys.modules,
+        "homeassistant.config_entries",
+        sys.modules["homeassistant.config_entries"],
     )
-    monkeypatch.setitem(sys.modules, "homeassistant.const", sys.modules["homeassistant.const"])
-    monkeypatch.setitem(sys.modules, "homeassistant.core", sys.modules["homeassistant.core"])
+    monkeypatch.setitem(
+        sys.modules, "homeassistant.const", sys.modules["homeassistant.const"]
+    )
+    monkeypatch.setitem(
+        sys.modules, "homeassistant.core", sys.modules["homeassistant.core"]
+    )
     monkeypatch.setitem(
         sys.modules, "homeassistant.exceptions", sys.modules["homeassistant.exceptions"]
     )
-    monkeypatch.setitem(sys.modules, "homeassistant.helpers", sys.modules["homeassistant.helpers"])
+    monkeypatch.setitem(
+        sys.modules, "homeassistant.helpers", sys.modules["homeassistant.helpers"]
+    )
     monkeypatch.setitem(
         sys.modules,
         "homeassistant.helpers.aiohttp_client",

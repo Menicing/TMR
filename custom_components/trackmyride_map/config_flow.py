@@ -76,9 +76,7 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_API_BASE_URL, default=DEFAULT_API_ENDPOINT
-                ): str,
+                vol.Optional(CONF_API_BASE_URL, default=DEFAULT_API_ENDPOINT): str,
                 vol.Required(CONF_API_KEY): str,
                 vol.Required(CONF_USER_KEY): str,
                 vol.Optional(CONF_ACCOUNT_ID): str,
