@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import COORDINATOR, DOMAIN, LOGGER_NAME
-from .coordinator import TrackMyRideDataCoordinator, VehicleData
+from .coordinator import TrackMyRideDataCoordinator
 
 LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -72,18 +72,19 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         self._entry = entry
         self._attr_unique_id = vehicle_id
         self._attr_name = None
+        self._attr_icon = "mdi:car-connected"
 
     @property
-    def _vehicle(self) -> VehicleData | None:
+    def _vehicle(self) -> dict | None:
         return self.coordinator.data.get(self._vehicle_id) if self.coordinator.data else None
 
     @property
     def latitude(self) -> float | None:
-        return self._vehicle.latitude if self._vehicle else None
+        return self._vehicle.get("lat") if self._vehicle else None
 
     @property
     def longitude(self) -> float | None:
-        return self._vehicle.longitude if self._vehicle else None
+        return self._vehicle.get("lon") if self._vehicle else None
 
     @property
     def source_type(self) -> SourceType:
@@ -91,18 +92,18 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
 
     @property
     def gps_accuracy(self) -> float | None:
-        return self._vehicle.gps_accuracy if self._vehicle else None
+        return None
 
     @property
     def extra_state_attributes(self) -> dict:
         if not self._vehicle:
             return {}
         return {
-            "stable_id": self._vehicle.stable_identifier,
-            "speed_kmh": self._vehicle.speed,
-            "heading": self._vehicle.heading,
-            "battery_level": self._vehicle.battery_level,
-            "last_update": self._vehicle.last_update.isoformat(),
+            "speed_kmh": self._vehicle.get("speed_kmh"),
+            "volts": self._vehicle.get("volts"),
+            "comms_delta": self._vehicle.get("comms_delta"),
+            "rego": self._vehicle.get("rego"),
+            "last_update_epoch": self._vehicle.get("timestamp_epoch"),
         }
 
     @property
@@ -113,15 +114,15 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
     def name(self) -> str | None:
         if not self._vehicle:
             return "TrackMyRide Vehicle"
-        return self._vehicle.name
+        return self._vehicle.get("name") or f"TrackMyRide {self._vehicle_id}"
 
     @property
     def device_info(self) -> DeviceInfo | None:
         if not self._vehicle:
             return None
         return DeviceInfo(
-            identifiers={(DOMAIN, self._vehicle.stable_identifier)},
-            name=self._vehicle.name,
+            identifiers={(DOMAIN, self._vehicle_id)},
+            name=self.name,
             manufacturer="TrackMyRide",
             entry_type=DeviceEntryType.SERVICE,
         )

@@ -3,148 +3,165 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import LOGGER_NAME
+from .const import DEFAULT_API_ENDPOINT, LOGGER_NAME
 
 LOGGER = logging.getLogger(LOGGER_NAME)
 
 
-class TrackMyRideClient:
-    """Minimal client for TrackMyRide vehicle data."""
+class TrackMyRideEndpointError(Exception):
+    """Raised when the endpoint is invalid or unreachable."""
 
-    def __init__(self, hass: HomeAssistant, base_url: str, api_key: str) -> None:
+
+class TrackMyRideAuthError(Exception):
+    """Raised when authentication fails."""
+
+
+def _redact(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 4:
+        return "***"
+    return f"{value[:2]}***{value[-2:]}"
+
+
+def _validate_endpoint(url: str) -> str:
+    """Ensure the URL matches the documented API endpoint."""
+    if not url:
+        raise TrackMyRideEndpointError("Empty endpoint")
+    normalized = url.strip()
+    if not normalized.endswith("/v2/php/api.php"):
+        raise TrackMyRideEndpointError("Endpoint must end with /v2/php/api.php")
+    return normalized
+
+
+class TrackMyRideClient:
+    """Client for TrackMyRide devices API."""
+
+    def __init__(
+        self, hass: HomeAssistant, base_url: str, api_key: str, user_key: str
+    ) -> None:
         self._hass = hass
-        self._base_url = base_url.rstrip("/")
+        self._endpoint = _validate_endpoint(base_url or DEFAULT_API_ENDPOINT)
         self._api_key = api_key
+        self._user_key = user_key
         self._session = async_get_clientsession(hass)
 
-    async def async_get_vehicle_positions(self) -> list[dict[str, Any]]:
-        """Fetch vehicles with their latest positions."""
-        url_candidates = [
-            f"{self._base_url}/v1/vehicles",
-            f"{self._base_url}/vehicles",
-        ]
-        headers = {"Authorization": f"Bearer {self._api_key}"}
+    @property
+    def endpoint(self) -> str:
+        """Return the validated endpoint."""
+        return self._endpoint
 
-        last_error: Exception | None = None
-        for url in url_candidates:
-            try:
-                async with self._session.get(url, headers=headers, timeout=15) as resp:
-                    resp.raise_for_status()
-                    payload = await resp.json()
-                    records = _extract_vehicle_records(payload)
-                    if records:
-                        return records
-            except (ClientError, TimeoutError, ValueError) as exc:
-                LOGGER.debug("TrackMyRide fetch error from %s: %s", url, exc)
-                last_error = exc
+    async def async_get_devices(
+        self, *, limit: int = 1, minutes: int = 60, filter_vehicle: str | None = None
+    ) -> dict[str, Any]:
+        """Fetch device data from TrackMyRide."""
+        params: dict[str, Any] = {
+            "limit": limit,
+            "minutes": minutes,
+        }
+        if filter_vehicle:
+            params["filter_vehicle"] = filter_vehicle
+        return await self._async_request("devices", "get", params=params)
 
-        if last_error:
-            raise last_error
-        raise RuntimeError("No vehicle data returned from TrackMyRide")
-
-
-def _extract_vehicle_records(payload: Any) -> list[dict[str, Any]]:
-    """Normalise various TrackMyRide payload shapes to a list of dicts."""
-    if payload is None:
-        return []
-
-    records: Iterable[Any] | None = None
-    if isinstance(payload, dict):
-        if isinstance(payload.get("data"), list):
-            records = payload["data"]
-        elif isinstance(payload.get("vehicles"), list):
-            records = payload["vehicles"]
-        elif isinstance(payload.get("results"), list):
-            records = payload["results"]
-    elif isinstance(payload, list):
-        records = payload
-
-    if records is None:
-        LOGGER.debug("Unexpected payload shape for vehicle list: %s", payload)
-        return []
-
-    normalised: list[dict[str, Any]] = []
-    for item in records:
-        if not isinstance(item, dict):
-            continue
-        coords = _extract_coordinates(item)
-        if coords is None:
-            LOGGER.debug("Skipping record without coordinates: %s", item)
-            continue
-
-        normalised.append(
-            {
-                "id": item.get("id")
-                or item.get("vehicle_id")
-                or item.get("uuid")
-                or item.get("vin")
-                or item.get("imei"),
-                "name": item.get("name") or item.get("label") or item.get("display_name"),
-                "latitude": coords["lat"],
-                "longitude": coords["lon"],
-                "gps_accuracy": _optional_float(
-                    item.get("accuracy") or item.get("gps_accuracy")
-                ),
-                "speed": _optional_float(item.get("speed") or item.get("speed_kmh")),
-                "heading": _optional_float(item.get("heading") or item.get("course")),
-                "battery_level": _optional_float(
-                    item.get("battery") or item.get("battery_level")
-                ),
-                "last_update": _parse_timestamp(
-                    item.get("recorded_at")
-                    or item.get("timestamp")
-                    or item.get("time")
-                    or item.get("updated_at")
-                ),
-                "raw": item,
-            }
+    async def async_test_connection(self) -> dict[str, Any]:
+        """Perform a lightweight connection test."""
+        return await self._async_request(
+            "devices", "get", params={"limit": 1, "minutes": 60}
         )
-    return normalised
 
+    async def _async_request(
+        self, module: str, action: str, *, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Send a request to TrackMyRide."""
+        query: dict[str, Any] = {
+            "api_key": self._api_key,
+            "user_key": self._user_key,
+            "module": module,
+            "action": action,
+            "json": 1,
+        }
+        if params:
+            query.update(params)
 
-def _extract_coordinates(item: dict[str, Any]) -> dict[str, float] | None:
-    lat = item.get("latitude") or item.get("lat")
-    lon = item.get("longitude") or item.get("lng") or item.get("lon")
+        redacted_query = {
+            **{k: v for k, v in query.items() if k not in {"api_key", "user_key"}},
+            "api_key": _redact(str(self._api_key)),
+            "user_key": _redact(str(self._user_key)),
+        }
+        LOGGER.debug(
+            "TrackMyRide request: endpoint=%s module=%s action=%s params=%s",
+            self._endpoint,
+            module,
+            action,
+            redacted_query,
+        )
 
-    if lat is None or lon is None:
-        return None
-
-    try:
-        return {"lat": float(lat), "lon": float(lon)}
-    except (TypeError, ValueError):
-        LOGGER.debug("Invalid coordinates in record: %s", item)
-        return None
-
-
-def _parse_timestamp(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        return _ensure_utc(value)
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
-    if isinstance(value, str):
         try:
-            return _ensure_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
-        except ValueError:
-            LOGGER.debug("Falling back to now for timestamp value: %s", value)
-    return datetime.now(timezone.utc)
+            async with self._session.get(
+                self._endpoint, params=query, timeout=15
+            ) as resp:
+                status = resp.status
+                text = await resp.text()
+                if status == 404:
+                    raise TrackMyRideEndpointError("Endpoint returned 404")
+                if status in (401, 403):
+                    raise TrackMyRideAuthError(f"Authentication failed: {status}")
+                if status >= 500:
+                    raise ClientError(f"Server error {status}")
+
+                try:
+                    payload = await resp.json()
+                except Exception:
+                    LOGGER.debug(
+                        "TrackMyRide response was not JSON (status=%s): %s",
+                        status,
+                        text[:200],
+                    )
+                    raise
+
+                self._log_shape(module, action, status, payload)
+        except TrackMyRideEndpointError:
+            raise
+        except TrackMyRideAuthError:
+            raise
+        except ClientError as err:
+            raise err
+        except Exception as err:  # pylint: disable=broad-except
+            raise ClientError(err) from err
+
+        if isinstance(payload, dict) and _has_invalid_key_message(payload):
+            raise TrackMyRideAuthError("TrackMyRide API reported invalid keys")
+
+        return payload if isinstance(payload, dict) else {"data": payload}
+
+    def _log_shape(
+        self, module: str, action: str, status: int, payload: Any
+    ) -> None:
+        """Log a brief shape summary without secrets."""
+        summary = ""
+        if isinstance(payload, dict):
+            summary = f"keys={list(payload.keys())}"
+        elif isinstance(payload, list):
+            summary = f"list_items={len(payload)}"
+        else:
+            summary = f"type={type(payload).__name__}"
+
+        LOGGER.debug(
+            "TrackMyRide response: endpoint=%s module=%s action=%s status=%s shape=%s",
+            self._endpoint,
+            module,
+            action,
+            status,
+            summary,
+        )
 
 
-def _ensure_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _optional_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+def _has_invalid_key_message(payload: dict[str, Any]) -> bool:
+    message = str(payload).lower()
+    return "invalid key" in message or "invalid api" in message
