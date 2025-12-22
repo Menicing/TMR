@@ -148,17 +148,41 @@ async def _migrate_registries(
     for entity_entry in er.async_entries_for_config_entry(
         entity_registry, entry.entry_id
     ):
-        short_name = _derive_short_name(entity_entry.unique_id)
-        if short_name and entity_entry.name != short_name:
-            entity_registry.async_update_entity(entity_entry.entity_id, name=short_name)
+        vehicle_id, short_name = _derive_entity_parts(entity_entry.unique_id)
+        if not short_name:
+            continue
+
+        vehicle_name = (
+            (coordinator.data or {}).get(vehicle_id, {}).get("name") if vehicle_id else None
+        )
+        current_name = entity_entry.name
+        default_like_name = current_name in (None, entity_entry.original_name)
+        if (
+            not default_like_name
+            and vehicle_name
+            and current_name == f"{vehicle_name} {short_name}"
+        ):
+            default_like_name = True
+
+        if not default_like_name:
+            continue
+
+        updates: dict[str, Any] = {}
+        if entity_entry.original_name != short_name:
+            updates["original_name"] = short_name
+        if current_name not in (None, short_name):
+            updates["name"] = None
+
+        if updates:
+            entity_registry.async_update_entity(entity_entry.entity_id, **updates)
 
 
-def _derive_short_name(unique_id: str | None) -> str | None:
-    """Return the short entity label from the known suffix map."""
+def _derive_entity_parts(unique_id: str | None) -> tuple[str | None, str | None]:
+    """Return the vehicle id and short entity label from the known suffix map."""
 
     if not unique_id:
-        return None
+        return None, None
     for suffix, label in _ENTITY_LABELS.items():
         if unique_id.endswith(f"_{suffix}"):
-            return label
-    return None
+            return unique_id[: -(len(suffix) + 1)], label
+    return None, None

@@ -262,6 +262,7 @@ def _prime_stub_modules():
             suggested_object_id=None,
             device_id=None,
             name=None,
+            original_name=None,
         ):
             entity_id = f"{domain}.{suggested_object_id or unique_id}"
             entry = EntityRegistryEntry(
@@ -270,6 +271,7 @@ def _prime_stub_modules():
                 config_entry_id=getattr(config_entry, "entry_id", None),
                 platform=platform,
                 name=name,
+                original_name=original_name,
                 device_id=device_id,
             )
             self._entities[entity_id] = entry

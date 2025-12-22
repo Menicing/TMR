@@ -72,6 +72,7 @@ def test_device_registry_migration_clears_service_entry_type():
         config_entry=entry,
         suggested_object_id="road_king_road_king_external_voltage",
         name="Road King External Voltage",
+        original_name="Road King External Voltage",
         device_id=device.id,
     )
 
@@ -80,8 +81,43 @@ def test_device_registry_migration_clears_service_entry_type():
     assert device.entry_type is None
     migrated_entry = entity_registry.get("sensor.road_king_road_king_external_voltage")
     assert migrated_entry is not None
-    assert migrated_entry.name == "External Voltage"
+    assert migrated_entry.name is None
+    assert migrated_entry.original_name == "External Voltage"
     assert migrated_entry.unique_id == "veh1_volts"
+
+
+def test_entity_registry_migration_respects_user_defined_name():
+    """Existing registry entries keep user friendly names."""
+
+    hass = HomeAssistant()
+    entry = _FakeConfigEntry(entry_id="abc123")
+    coordinator = _make_coordinator({"veh1": {"name": "Road King"}})
+
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_or_create_device(
+        identifiers={(DOMAIN, "veh1")},
+        entry_type=DeviceEntryType.SERVICE,
+        name="Road King",
+    )
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "veh1_volts",
+        config_entry=entry,
+        suggested_object_id="road_king_custom_voltage",
+        name="My Custom Voltage Name",
+        original_name="Road King External Voltage",
+        device_id=device.id,
+    )
+
+    asyncio.run(_migrate_registries(hass, entry, coordinator))
+
+    migrated_entry = entity_registry.get("sensor.road_king_custom_voltage")
+    assert migrated_entry is not None
+    assert migrated_entry.name == "My Custom Voltage Name"
+    assert migrated_entry.original_name == "Road King External Voltage"
 
 
 def test_format_comms_delta_two_levels_and_minus_one():
