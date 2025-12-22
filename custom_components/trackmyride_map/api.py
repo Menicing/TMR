@@ -85,6 +85,11 @@ class TrackMyRideClient:
             params["filter_vehicle"] = filter_vehicle
         return await self._async_request("devices", "get", params=params)
 
+    async def async_get_zones(self) -> dict[str, Any]:
+        """Fetch zones data from TrackMyRide."""
+
+        return await self._async_request("zones", "get")
+
     async def async_test_connection(self) -> dict[str, Any]:
         """Perform a lightweight connection test."""
         return await self._async_request(
