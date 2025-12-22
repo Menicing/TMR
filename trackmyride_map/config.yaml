@@ -1,5 +1,5 @@
 name: TrackMyRide Map
-version: "1.0.0"
+version: "1.0.1"
 slug: trackmyride_map
 description: Map tracking add-on for the TrackMyRide API.
 arch:
@@ -15,7 +15,8 @@ panel_title: TrackMyRide
 webui: http://[HOST]:[PORT:8099]
 ports:
   8099/tcp: 8099
-map: true
+map:
+  - config:rw
 options:
   api_base_url: https://api.trackmyride.com
   api_key: ""

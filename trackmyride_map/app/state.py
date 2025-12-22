@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Deque, Iterable
 
 from .trackmyride_client import VehiclePosition
@@ -31,8 +31,8 @@ class VehicleState:
         if retention_minutes <= 0:
             self.history.clear()
             return
-        cutoff = datetime.utcnow() - timedelta(minutes=retention_minutes)
-        while self.history and self.history[0].recorded_at < cutoff:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=retention_minutes)
+        while self.history and self._recorded_at_utc(self.history[0]) < cutoff:
             self.history.popleft()
 
     def as_dict(self) -> dict:
@@ -60,3 +60,9 @@ def _position_as_dict(position: VehiclePosition | None) -> dict | None:
 
 def to_serializable(state: Iterable[VehicleState]) -> list[dict]:
     return [item.as_dict() for item in state]
+
+
+def _recorded_at_utc(position: VehiclePosition) -> datetime:
+    if position.recorded_at.tzinfo is None:
+        return position.recorded_at.replace(tzinfo=timezone.utc)
+    return position.recorded_at.astimezone(timezone.utc)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -80,8 +80,15 @@ def _extract_location_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     data = payload.get("data") or payload
     # Common TrackMyRide-style fields
-    latitude = data.get("latitude") or data.get("lat")
-    longitude = data.get("longitude") or data.get("lng") or data.get("lon")
+    latitude = data.get("latitude")
+    if latitude is None:
+        latitude = data.get("lat")
+
+    longitude = data.get("longitude")
+    if longitude is None:
+        longitude = data.get("lng")
+    if longitude is None:
+        longitude = data.get("lon")
 
     if latitude is None or longitude is None:
         raise ValueError("Payload missing latitude/longitude fields")
@@ -106,16 +113,16 @@ def _extract_location_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_timestamp(value: Any) -> datetime:
     if isinstance(value, datetime):
-        return value
+        return _ensure_utc(value)
     if isinstance(value, (int, float)):
-        return datetime.utcfromtimestamp(value)
+        return datetime.fromtimestamp(value, tz=timezone.utc)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return _ensure_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
         except ValueError:
             LOGGER.debug("Falling back to raw timestamp for %s", value)
-            return datetime.utcnow()
-    return datetime.utcnow()
+            return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc)
 
 
 def _optional_float(value: Any) -> float | None:
@@ -123,3 +130,9 @@ def _optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
