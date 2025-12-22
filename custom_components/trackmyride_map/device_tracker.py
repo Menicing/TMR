@@ -72,6 +72,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         self._attr_unique_id = vehicle_id
         self._attr_name = None
         self._attr_icon = "mdi:car-connected"
+        self._last_snapshot: tuple | None = None
 
     @property
     def _vehicle(self) -> dict | None:
@@ -104,12 +105,9 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         return {
             "speed_kmh": self._vehicle.get("speed_kmh"),
             "volts": self._vehicle.get("volts"),
-            "comms_delta": self._vehicle.get("comms_delta"),
-            "comms_delta_seconds": self._vehicle.get("comms_delta_seconds"),
-            "comms_delta_readable": self._vehicle.get("comms_delta_readable"),
+            "last_comms": self._vehicle.get("last_comms"),
             "rego": self._vehicle.get("rego"),
             "last_update": self._vehicle.get("timestamp_dt_utc"),
-            "last_update_epoch": self._vehicle.get("timestamp_epoch"),
         }
 
     @property
@@ -119,7 +117,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
     @property
     def name(self) -> str | None:
         if not self._vehicle:
-            return "TrackMyRide Vehicle"
+            return "Track My Ride Vehicle"
         return self._vehicle.get("name") or f"TrackMyRide {self._vehicle_id}"
 
     @property
@@ -132,3 +130,16 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             manufacturer="TrackMyRide",
             model="Tracker",
         )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Write state only when values change."""
+        snapshot = (
+            self.latitude,
+            self.longitude,
+            self.extra_state_attributes,
+        )
+        if snapshot == self._last_snapshot:
+            return
+        self._last_snapshot = snapshot
+        self.async_write_ha_state()

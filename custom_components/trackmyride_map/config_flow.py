@@ -26,6 +26,34 @@ from .const import (
 )
 
 
+async def _async_validate_credentials(
+    hass,
+    base_url: str,
+    api_key: str,
+    user_key: str,
+) -> TrackMyRideClient:
+    """Validate credentials and return an initialised client."""
+    try:
+        client = TrackMyRideClient(hass, base_url, api_key, user_key)
+        await client.async_test_connection()
+        return client
+    except TrackMyRideEndpointError as err:
+        raise ValueError("invalid_endpoint") from err
+    except TrackMyRideAuthError as err:
+        raise ValueError("invalid_auth") from err
+    except ClientError as err:
+        raise ValueError("cannot_connect") from err
+    except Exception as err:  # pylint: disable=broad-except
+        raise ValueError("unknown") from err
+
+
+def _field_default(
+    key: str, config_entry: config_entries.ConfigEntry, fallback
+) -> str | int | None:
+    """Return the default value, preferring options over data."""
+    return config_entry.options.get(key, config_entry.data.get(key, fallback))
+
+
 class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TrackMyRide Map."""
 
@@ -39,20 +67,16 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             base_url = user_input.get(CONF_API_BASE_URL) or DEFAULT_API_ENDPOINT
             api_key = user_input[CONF_API_KEY]
             user_key = user_input[CONF_USER_KEY]
+            poll_interval = int(user_input[CONF_POLL_INTERVAL])
+            minutes_window = int(user_input[CONF_MINUTES_WINDOW])
 
             try:
-                client = TrackMyRideClient(self.hass, base_url, api_key, user_key)
-                await client.async_test_connection()
-            except TrackMyRideEndpointError:
-                errors["base"] = "invalid_endpoint"
-            except TrackMyRideAuthError:
-                errors["base"] = "invalid_auth"
-            except ClientError:
-                errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                errors["base"] = "unknown"
-
-            if not errors:
+                client = await _async_validate_credentials(
+                    self.hass, base_url, api_key, user_key
+                )
+            except ValueError as err:
+                errors["base"] = str(err)
+            else:
                 account_id = user_input.get(CONF_ACCOUNT_ID)
                 unique_id = f"{client.endpoint}"
                 if account_id:
@@ -62,15 +86,15 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
-                    title="TrackMyRide Map",
+                    title="Track My Ride",
                     data={
                         CONF_API_BASE_URL: client.endpoint,
                         CONF_API_KEY: api_key,
                         CONF_USER_KEY: user_key,
                         CONF_ACCOUNT_ID: account_id,
                         CONF_IDENTITY_FIELD: user_input.get(CONF_IDENTITY_FIELD),
-                        CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
-                        CONF_MINUTES_WINDOW: DEFAULT_MINUTES,
+                        CONF_POLL_INTERVAL: poll_interval,
+                        CONF_MINUTES_WINDOW: minutes_window,
                     },
                 )
 
@@ -81,6 +105,12 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_USER_KEY): str,
                 vol.Optional(CONF_ACCOUNT_ID): str,
                 vol.Optional(CONF_IDENTITY_FIELD): str,
+                vol.Required(
+                    CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL
+                ): vol.In(POLL_INTERVAL_OPTIONS),
+                vol.Required(
+                    CONF_MINUTES_WINDOW, default=DEFAULT_MINUTES
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_MINUTES, max=MAX_MINUTES)),
             }
         )
         return self.async_show_form(
@@ -117,18 +147,12 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_key = user_input[CONF_USER_KEY]
 
             try:
-                client = TrackMyRideClient(self.hass, base_url, api_key, user_key)
-                await client.async_test_connection()
-            except TrackMyRideEndpointError:
-                errors["base"] = "invalid_endpoint"
-            except TrackMyRideAuthError:
-                errors["base"] = "invalid_auth"
-            except ClientError:
-                errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                errors["base"] = "unknown"
-
-            if not errors:
+                client = await _async_validate_credentials(
+                    self.hass, base_url, api_key, user_key
+                )
+            except ValueError as err:
+                errors["base"] = str(err)
+            else:
                 new_data = {
                     **entry.data,
                     CONF_API_BASE_URL: client.endpoint,
@@ -169,19 +193,49 @@ class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_options(self, user_input=None):
         errors: dict[str, str] = {}
+        base_url = self.config_entry.data.get(CONF_API_BASE_URL, DEFAULT_API_ENDPOINT)
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            api_key = user_input[CONF_API_KEY]
+            user_key = user_input[CONF_USER_KEY]
+            try:
+                await _async_validate_credentials(
+                    self.hass, base_url, api_key, user_key
+                )
+            except ValueError as err:
+                errors["base"] = str(err)
+            else:
+                options = {
+                    CONF_API_KEY: api_key,
+                    CONF_USER_KEY: user_key,
+                    CONF_POLL_INTERVAL: int(user_input[CONF_POLL_INTERVAL]),
+                    CONF_MINUTES_WINDOW: int(user_input[CONF_MINUTES_WINDOW]),
+                    CONF_IDENTITY_FIELD: user_input.get(CONF_IDENTITY_FIELD, ""),
+                }
+                if getattr(self.hass, "config_entries", None):
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=options
+                    )
+                    await self.hass.config_entries.async_reload(
+                        self.config_entry.entry_id
+                    )
+                return self.async_create_entry(title="", data=options)
 
-        current_interval = self.config_entry.options.get(
-            CONF_POLL_INTERVAL,
-            self.config_entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+        current_interval = _field_default(
+            CONF_POLL_INTERVAL, self.config_entry, DEFAULT_POLL_INTERVAL
         )
-        current_minutes = self.config_entry.options.get(
-            CONF_MINUTES_WINDOW,
-            self.config_entry.data.get(CONF_MINUTES_WINDOW, DEFAULT_MINUTES),
+        current_minutes = _field_default(
+            CONF_MINUTES_WINDOW, self.config_entry, DEFAULT_MINUTES
         )
         data_schema = vol.Schema(
             {
+                vol.Required(
+                    CONF_API_KEY,
+                    default=_field_default(CONF_API_KEY, self.config_entry, ""),
+                ): str,
+                vol.Required(
+                    CONF_USER_KEY,
+                    default=_field_default(CONF_USER_KEY, self.config_entry, ""),
+                ): str,
                 vol.Required(
                     CONF_POLL_INTERVAL,
                     default=current_interval,
@@ -194,10 +248,7 @@ class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_IDENTITY_FIELD,
-                    default=self.config_entry.options.get(
-                        CONF_IDENTITY_FIELD,
-                        self.config_entry.data.get(CONF_IDENTITY_FIELD, ""),
-                    ),
+                    default=_field_default(CONF_IDENTITY_FIELD, self.config_entry, ""),
                 ): str,
             }
         )

@@ -22,6 +22,7 @@ from custom_components.trackmyride_map.sensor import (
     TrackMyRideVoltsSensor,
     TrackMyRideZoneSensor,
 )
+from custom_components.trackmyride_map.device_tracker import TrackMyRideDeviceTracker
 from tests.conftest import _FakeConfigEntry  # noqa: PLC2701
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -75,7 +76,7 @@ def test_normalisation_includes_new_fields():
     assert data["acc_counter_str"] == "0:12:18"
     assert data["comms_delta"] == 10
     assert data["comms_delta_seconds"] == 9
-    assert data["comms_delta_readable"] == "9 seconds"
+    assert data["last_comms"] == "9 seconds"
 
 
 def test_zone_parsing():
@@ -189,3 +190,52 @@ def test_duration_minutes_to_timedelta():
     td = _minutes_to_timedelta(12.3)
     assert td.total_seconds() == pytest.approx(738)
     assert str(td) == "0:12:18"
+
+
+def test_device_tracker_attributes_cleanup():
+    """Device tracker exposes cleaned and renamed attributes."""
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "speed_kmh": 12,
+                "volts": 12.3,
+                "comms_delta": 10,
+                "comms_delta_seconds": 9,
+                "last_comms": "9 seconds",
+                "rego": "ABC123",
+                "timestamp_dt_utc": "2023-01-01T00:00:00+00:00",
+                "timestamp_epoch": 1_672_531_200,
+            }
+        }
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+
+    attrs = tracker.extra_state_attributes
+    assert "comms_delta" not in attrs
+    assert "comms_delta_seconds" not in attrs
+    assert "last_update_epoch" not in attrs
+    assert attrs["last_update"] == "2023-01-01T00:00:00+00:00"
+    assert attrs["last_comms"] == "9 seconds"
+
+
+def test_entity_skips_write_when_unchanged(monkeypatch):
+    """Coordinator updates should not write when state is unchanged."""
+    coordinator = _make_coordinator({"veh1": {"name": "Vehicle", "volts": 12.3}})
+    entry = _FakeConfigEntry()
+    sensor = TrackMyRideVoltsSensor(coordinator, entry, "veh1")
+
+    calls: list[str] = []
+    sensor.async_write_ha_state = lambda: calls.append("called")  # type: ignore[assignment]
+
+    sensor._handle_coordinator_update()
+    assert len(calls) == 1
+
+    coordinator.data = {"veh1": {"name": "Vehicle", "volts": 12.3}}
+    sensor._handle_coordinator_update()
+    assert len(calls) == 1
+
+    coordinator.data = {"veh1": {"name": "Vehicle", "volts": 13.0}}
+    sensor._handle_coordinator_update()
+    assert len(calls) == 2

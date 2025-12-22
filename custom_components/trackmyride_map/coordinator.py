@@ -89,7 +89,9 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
             if not normalized_entry:
                 continue
             unique_id, normalized_device = normalized_entry
-            normalized[unique_id] = normalized_device
+            normalized[unique_id] = _coalesce_device(
+                previous.get(unique_id), normalized_device
+            )
 
         return normalized
 
@@ -238,7 +240,7 @@ def _normalize_device(
         "volts": volts,
         "comms_delta": comms_delta,
         "comms_delta_seconds": max(comms_delta - 1, 0) if comms_delta is not None else None,
-        "comms_delta_readable": format_comms_delta(comms_delta),
+        "last_comms": format_comms_delta(comms_delta),
         "odometer": odometer,
         "acc_counter": acc_counter,
         "acc_counter_timedelta": acc_counter_timedelta,
@@ -254,6 +256,15 @@ def _normalize_device(
         "raw": raw_device,
     }
     return unique_id, normalized
+
+
+def _coalesce_device(
+    previous: dict[str, Any] | None, current: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the previous device data when unchanged to reduce churn."""
+    if previous is not None and previous == current:
+        return previous
+    return current
 
 
 def _parse_zone_ids(zone: str) -> list[str]:
