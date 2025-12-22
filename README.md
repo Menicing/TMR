@@ -41,3 +41,7 @@ The integration uses Home Assistant Config Entries with an Options flow:
 - The integration polls using `DataUpdateCoordinator` with timezone-aware timestamps and defensive parsing of TrackMyRide payloads.
 - Device tracker entities update automatically when new vehicles appear; polling is throttled to avoid API spam.
 
+## Releases / Updating
+
+- HACS requires a Git tag/release for versioned updates. Create releases using tags that follow `vX.Y.Z` and keep the manifest `version` in sync.
+- The tag name must be `v0.1.0` when the manifest version is `0.1.0` (and similarly for future releases). This allows HACS to detect the semantic version instead of falling back to a commit hash.
