@@ -84,13 +84,14 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
         except TrackMyRideThrottleError as exc:
             self._last_http_status = exc.status
             self._throttle_count += 1
-            delay = _retry_delay_from_headers(exc.headers, now)
+            throttle_now = self._utcnow()
+            delay = _retry_delay_from_headers(exc.headers, throttle_now)
             if delay is None:
                 delay = min(
                     THROTTLE_BACKOFF_INITIAL * (2 ** (self._throttle_count - 1)),
                     THROTTLE_BACKOFF_MAX,
                 )
-            self._next_allowed_at = now + timedelta(seconds=delay)
+            self._next_allowed_at = throttle_now + timedelta(seconds=delay)
             self._throttle_logged_until = None
             return self.data or {}
         except TrackMyRideEndpointError as exc:

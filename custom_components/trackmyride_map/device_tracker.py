@@ -111,6 +111,20 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         }
 
     @property
+    def location_name(self) -> str | None:
+        if not self._vehicle:
+            return None
+        speed = self._vehicle.get("speed_kmh")
+        if speed is not None and speed > 0:
+            return "travelling"
+        zone_state = self._vehicle.get("zone_state")
+        if isinstance(zone_state, str):
+            zone_state = zone_state.strip()
+        else:
+            zone_state = ""
+        return zone_state or "away"
+
+    @property
     def available(self) -> bool:
         return self._vehicle is not None
 
@@ -138,6 +152,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             self.latitude,
             self.longitude,
             self.extra_state_attributes,
+            self.location_name,
         )
         if snapshot == self._last_snapshot:
             return
