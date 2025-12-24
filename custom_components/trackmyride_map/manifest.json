@@ -1,7 +1,7 @@
 {
   "domain": "trackmyride_map",
   "name": "Track My Ride",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "documentation": "https://github.com/Menicing/TMR",
   "issue_tracker": "https://github.com/Menicing/TMR/issues",
   "requirements": ["aiohttp>=3.9.0"],

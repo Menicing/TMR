@@ -19,12 +19,10 @@ from .const import (
     CONF_API_KEY,
     CONF_IDENTITY_FIELD,
     CONF_MINUTES_WINDOW,
-    CONF_POLL_INTERVAL,
     CONF_USER_KEY,
     COORDINATOR,
     DEFAULT_API_ENDPOINT,
     DEFAULT_MINUTES,
-    DEFAULT_POLL_INTERVAL,
     DOMAIN,
     LOGGER_NAME,
 )
@@ -91,8 +89,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ACCOUNT_ID: entry.data.get(CONF_ACCOUNT_ID),
         CONF_IDENTITY_FIELD: entry.options.get(CONF_IDENTITY_FIELD)
         or entry.data.get(CONF_IDENTITY_FIELD),
-        CONF_POLL_INTERVAL: entry.options.get(CONF_POLL_INTERVAL)
-        or entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
         CONF_MINUTES_WINDOW: entry.options.get(CONF_MINUTES_WINDOW)
         or entry.data.get(CONF_MINUTES_WINDOW, DEFAULT_MINUTES),
     }

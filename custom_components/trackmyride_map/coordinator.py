@@ -4,29 +4,44 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from email.utils import parsedate_to_datetime
+from typing import Any, Mapping
 
 from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import TrackMyRideAuthError, TrackMyRideClient, TrackMyRideEndpointError
+from .api import (
+    TrackMyRideAuthError,
+    TrackMyRideClient,
+    TrackMyRideEndpointError,
+    TrackMyRideThrottleError,
+)
 from .util import format_comms_delta
 from .const import (
     CONF_IDENTITY_FIELD,
     CONF_MINUTES_WINDOW,
-    CONF_POLL_INTERVAL,
     DEFAULT_MINUTES,
-    DEFAULT_POLL_INTERVAL,
     LOGGER_NAME,
-    MAX_BACKOFF_SECONDS,
+    THROTTLE_BACKOFF_INITIAL,
+    THROTTLE_BACKOFF_MAX,
 )
 
 LOGGER = logging.getLogger(LOGGER_NAME)
 
 
 class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
-    """Coordinator that polls TrackMyRide and handles simple backoff."""
+    """Coordinator that polls TrackMyRide and handles throttling."""
+
+    @property
+    def throttled_until(self) -> str | None:
+        """Return the current throttle end time in ISO format, if set."""
+        return self._next_allowed_at.isoformat() if self._next_allowed_at else None
+
+    @property
+    def last_http_status(self) -> int | None:
+        """Return the last HTTP status seen from the API."""
+        return self._last_http_status
 
     def __init__(
         self,
@@ -35,10 +50,10 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
         config: dict[str, Any],
     ) -> None:
         self.client = client
-        self._base_interval = timedelta(
-            seconds=int(config.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
-        )
-        self._failure_count = 0
+        self._next_allowed_at: datetime | None = None
+        self._throttle_count = 0
+        self._throttle_logged_until: datetime | None = None
+        self._last_http_status: int | None = None
         self._identity_field = (config.get(CONF_IDENTITY_FIELD) or "").strip() or None
         self._minutes = int(config.get(CONF_MINUTES_WINDOW, DEFAULT_MINUTES))
         self._zone_map: dict[str, str] = {}
@@ -49,28 +64,48 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
             hass,
             LOGGER,
             name="TrackMyRide Map Coordinator",
-            update_interval=self._base_interval,
+            update_interval=timedelta(seconds=1),
         )
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
+        now = self._utcnow()
+        if self._next_allowed_at and now < self._next_allowed_at:
+            if self._throttle_logged_until != self._next_allowed_at:
+                LOGGER.debug(
+                    "Throttled until %s", self._next_allowed_at.isoformat()
+                )
+                self._throttle_logged_until = self._next_allowed_at
+            return self.data or {}
+
         try:
             payload = await self.client.async_get_devices(
                 limit=1, minutes=self._minutes
             )
+        except TrackMyRideThrottleError as exc:
+            self._last_http_status = exc.status
+            self._throttle_count += 1
+            delay = _retry_delay_from_headers(exc.headers, now)
+            if delay is None:
+                delay = min(
+                    THROTTLE_BACKOFF_INITIAL * (2 ** (self._throttle_count - 1)),
+                    THROTTLE_BACKOFF_MAX,
+                )
+            self._next_allowed_at = now + timedelta(seconds=delay)
+            self._throttle_logged_until = None
+            return self.data or {}
         except TrackMyRideEndpointError as exc:
-            self._apply_backoff()
             raise UpdateFailed(f"Endpoint error: {exc}") from exc
         except TrackMyRideAuthError as exc:
-            self._apply_backoff()
             raise UpdateFailed(f"Authentication error: {exc}") from exc
         except ClientError as exc:
-            self._apply_backoff()
             raise UpdateFailed(f"Connection error: {exc}") from exc
         except Exception as exc:  # pylint: disable=broad-except
-            self._apply_backoff()
             raise UpdateFailed(f"Unexpected error: {exc}") from exc
 
-        self._reset_interval()
+        self._last_http_status = getattr(self.client, "last_http_status", None)
+        self._next_allowed_at = None
+        self._throttle_count = 0
+        self._throttle_logged_until = None
         devices = self._extract_devices(payload)
         normalized: dict[str, dict[str, Any]] = {}
         previous = self.data or {}
@@ -110,25 +145,8 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
             devices.append(device)
         return devices
 
-    def _apply_backoff(self) -> None:
-        self._failure_count += 1
-        factor = min(self._failure_count + 1, 4)
-        new_interval = min(
-            self._base_interval * factor, timedelta(seconds=MAX_BACKOFF_SECONDS)
-        )
-        if new_interval != self.update_interval:
-            LOGGER.debug(
-                "Applying backoff after %s failures: %ss",
-                self._failure_count,
-                new_interval.total_seconds(),
-            )
-            self.update_interval = new_interval
-
-    def _reset_interval(self) -> None:
-        if self._failure_count:
-            LOGGER.debug("Resetting backoff after successful update")
-        self._failure_count = 0
-        self.update_interval = self._base_interval
+    def _utcnow(self) -> datetime:
+        return datetime.now(timezone.utc)
 
     async def _ensure_zone_map(self) -> None:
         """Populate the zone cache when needed, throttled to once per TTL."""
@@ -163,6 +181,43 @@ def _as_int(value: Any, fallback: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _retry_delay_from_headers(
+    headers: Mapping[str, str], now: datetime
+) -> float | None:
+    retry_after = _get_header(headers, "Retry-After")
+    if retry_after:
+        try:
+            return max(0, int(retry_after))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                delta = (parsed - now).total_seconds()
+                return max(0.0, delta)
+
+    retry_after_ms = _get_header(headers, "x-ms-retry-after-ms")
+    if retry_after_ms:
+        try:
+            return max(0.0, int(retry_after_ms) / 1000.0)
+        except ValueError:
+            return None
+    return None
+
+
+def _get_header(headers: Mapping[str, str], name: str) -> str | None:
+    if name in headers:
+        return headers[name]
+    lower = name.lower()
+    for key, value in headers.items():
+        if key.lower() == lower:
+            return value
+    return None
 
 
 def _normalize_device(

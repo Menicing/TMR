@@ -22,6 +22,15 @@ class TrackMyRideAuthError(Exception):
     """Raised when authentication fails."""
 
 
+class TrackMyRideThrottleError(Exception):
+    """Raised when the API responds with a throttle."""
+
+    def __init__(self, status: int, headers: dict[str, str]) -> None:
+        super().__init__(f"Throttled with status {status}")
+        self.status = status
+        self.headers = headers
+
+
 def _redact(value: str) -> str:
     if not value:
         return ""
@@ -67,11 +76,17 @@ class TrackMyRideClient:
         self._api_key = api_key
         self._user_key = user_key
         self._session = async_get_clientsession(hass)
+        self._last_status: int | None = None
 
     @property
     def endpoint(self) -> str:
         """Return the validated endpoint."""
         return self._endpoint
+
+    @property
+    def last_http_status(self) -> int | None:
+        """Return the last HTTP status returned by the API."""
+        return self._last_status
 
     async def async_get_devices(
         self, *, limit: int = 1, minutes: int = 60, filter_vehicle: str | None = None
@@ -128,7 +143,10 @@ class TrackMyRideClient:
                 self._endpoint, params=query, timeout=15
             ) as resp:
                 status = resp.status
+                self._last_status = status
                 text = await resp.text()
+                if status == 429:
+                    raise TrackMyRideThrottleError(status, dict(resp.headers))
                 if status == 404:
                     raise TrackMyRideEndpointError("Endpoint returned 404")
                 if status in (401, 403):
@@ -150,6 +168,8 @@ class TrackMyRideClient:
         except TrackMyRideEndpointError:
             raise
         except TrackMyRideAuthError:
+            raise
+        except TrackMyRideThrottleError:
             raise
         except ClientError as err:
             raise err

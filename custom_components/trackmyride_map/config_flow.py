@@ -14,15 +14,12 @@ from .const import (
     CONF_API_KEY,
     CONF_IDENTITY_FIELD,
     CONF_MINUTES_WINDOW,
-    CONF_POLL_INTERVAL,
     CONF_USER_KEY,
     DEFAULT_API_ENDPOINT,
     DEFAULT_MINUTES,
-    DEFAULT_POLL_INTERVAL,
     DOMAIN,
     MAX_MINUTES,
     MIN_MINUTES,
-    POLL_INTERVAL_OPTIONS,
 )
 
 
@@ -67,7 +64,6 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             base_url = user_input.get(CONF_API_BASE_URL) or DEFAULT_API_ENDPOINT
             api_key = user_input[CONF_API_KEY]
             user_key = user_input[CONF_USER_KEY]
-            poll_interval = int(user_input[CONF_POLL_INTERVAL])
             minutes_window = int(user_input[CONF_MINUTES_WINDOW])
 
             try:
@@ -93,7 +89,6 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_USER_KEY: user_key,
                         CONF_ACCOUNT_ID: account_id,
                         CONF_IDENTITY_FIELD: user_input.get(CONF_IDENTITY_FIELD),
-                        CONF_POLL_INTERVAL: poll_interval,
                         CONF_MINUTES_WINDOW: minutes_window,
                     },
                 )
@@ -105,9 +100,6 @@ class TrackMyRideConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_USER_KEY): str,
                 vol.Optional(CONF_ACCOUNT_ID): str,
                 vol.Optional(CONF_IDENTITY_FIELD): str,
-                vol.Required(
-                    CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL
-                ): vol.In(POLL_INTERVAL_OPTIONS),
                 vol.Required(
                     CONF_MINUTES_WINDOW, default=DEFAULT_MINUTES
                 ): vol.All(vol.Coerce(int), vol.Range(min=MIN_MINUTES, max=MAX_MINUTES)),
@@ -216,7 +208,6 @@ class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):
                 options = {
                     CONF_API_KEY: api_key,
                     CONF_USER_KEY: user_key,
-                    CONF_POLL_INTERVAL: int(user_input[CONF_POLL_INTERVAL]),
                     CONF_MINUTES_WINDOW: int(user_input[CONF_MINUTES_WINDOW]),
                     CONF_IDENTITY_FIELD: user_input.get(CONF_IDENTITY_FIELD, ""),
                 }
@@ -229,9 +220,6 @@ class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 return self.async_create_entry(title="", data=options)
 
-        current_interval = _field_default(
-            CONF_POLL_INTERVAL, self.config_entry, DEFAULT_POLL_INTERVAL
-        )
         current_minutes = _field_default(
             CONF_MINUTES_WINDOW, self.config_entry, DEFAULT_MINUTES
         )
@@ -245,10 +233,6 @@ class TrackMyRideOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_USER_KEY,
                     default=_field_default(CONF_USER_KEY, self.config_entry, ""),
                 ): str,
-                vol.Required(
-                    CONF_POLL_INTERVAL,
-                    default=current_interval,
-                ): vol.In(POLL_INTERVAL_OPTIONS),
                 vol.Required(
                     CONF_MINUTES_WINDOW,
                     default=current_minutes,
