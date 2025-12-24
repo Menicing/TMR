@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import ModuleType
+import asyncio
 
 import pytest
 
@@ -125,6 +126,7 @@ def _prime_stub_modules():
             self.update_interval = update_interval
             self.data = None
             self._listeners = []
+            self._update_lock = asyncio.Lock()
 
         def __class_getitem__(cls, item):
             return cls
@@ -137,6 +139,12 @@ def _prime_stub_modules():
             self.data = data
             for listener in list(self._listeners):
                 listener()
+
+        async def async_refresh(self):
+            async with self._update_lock:
+                data = await self._async_update_data()
+                self.async_set_updated_data(data)
+                return data
 
     class UpdateFailed(Exception):
         pass
