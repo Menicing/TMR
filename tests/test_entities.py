@@ -220,6 +220,39 @@ def test_device_tracker_attributes_cleanup():
     assert attrs["last_comms"] == "9 seconds"
 
 
+def test_tracker_state_travelling_when_speed_gt_zero():
+    """Speed above zero forces travelling state regardless of zone."""
+    coordinator = _make_coordinator(
+        {"veh1": {"name": "Vehicle 1", "speed_kmh": 5, "zone_state": "Home"}}
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+
+    assert tracker.location_name == "travelling"
+
+
+def test_tracker_state_zone_when_not_moving():
+    """When stationary, zone name is used as state."""
+    coordinator = _make_coordinator(
+        {"veh1": {"name": "Vehicle 1", "speed_kmh": 0, "zone_state": "Home"}}
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+
+    assert tracker.location_name == "Home"
+
+
+def test_tracker_state_away_when_not_moving_no_zone():
+    """When stationary without zone, state falls back to away."""
+    coordinator = _make_coordinator(
+        {"veh1": {"name": "Vehicle 1", "speed_kmh": 0, "zone_state": ""}}
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+
+    assert tracker.location_name == "away"
+
+
 def test_entity_skips_write_when_unchanged(monkeypatch):
     """Coordinator updates should not write when state is unchanged."""
     coordinator = _make_coordinator({"veh1": {"name": "Vehicle", "volts": 12.3}})
