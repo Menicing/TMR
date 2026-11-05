@@ -355,7 +355,21 @@ def _prime_stub_modules():
     )
 
     class TrackerEntity:
-        pass
+        @property
+        def latitude(self):
+            return getattr(self, "_attr_latitude", None)
+
+        @property
+        def longitude(self):
+            return getattr(self, "_attr_longitude", None)
+
+        @property
+        def location_name(self):
+            return getattr(self, "_attr_location_name", None)
+
+        @property
+        def source_type(self):
+            return getattr(self, "_attr_source_type", None)
 
     device_tracker_config.TrackerEntity = TrackerEntity
     sys.modules["homeassistant.components.device_tracker.config_entry"] = (

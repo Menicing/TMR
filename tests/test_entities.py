@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from custom_components.trackmyride_map.binary_sensor import (
@@ -17,6 +19,7 @@ from custom_components.trackmyride_map.coordinator import (
 )
 from custom_components.trackmyride_map.sensor import (
     TrackMyRideAccCounterSensor,
+    TrackMyRideGpsLocationSensor,
     TrackMyRideInternalBatterySensor,
     TrackMyRideOdometerSensor,
     TrackMyRideVoltsSensor,
@@ -121,6 +124,7 @@ def test_entity_unique_ids_stable():
         TrackMyRideAccCounterSensor(coordinator, entry, "veh999"),
         TrackMyRideInternalBatterySensor(coordinator, entry, "veh999"),
         TrackMyRideZoneSensor(coordinator, entry, "veh999"),
+        TrackMyRideGpsLocationSensor(coordinator, entry, "veh999"),
         TrackMyRideExternalPowerBinarySensor(coordinator, entry, "veh999"),
         TrackMyRideEngineBinarySensor(coordinator, entry, "veh999"),
     ]
@@ -131,6 +135,7 @@ def test_entity_unique_ids_stable():
         "acc_counter",
         "internal_battery",
         "zone",
+        "gps_location",
         "external_power",
         "engine",
     ]
@@ -251,6 +256,69 @@ def test_tracker_state_away_when_not_moving_no_zone():
     tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
 
     assert tracker.location_name == "away"
+
+
+def test_tracker_delays_travelling_to_away(monkeypatch):
+    """A routine traffic stop does not immediately end a trip."""
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "speed_kmh": 5,
+                "zone_state": "",
+                "lat": -33.8688,
+                "lon": 151.2093,
+            }
+        }
+    )
+    tracker = TrackMyRideDeviceTracker(coordinator, _FakeConfigEntry(), "veh1")
+    assert tracker.location_name == "travelling"
+
+    coordinator.data["veh1"]["speed_kmh"] = 0
+    monkeypatch.setattr(tracker, "_utcnow", lambda: start)
+    tracker._handle_coordinator_update()
+    assert tracker.location_name == "travelling"
+
+    monkeypatch.setattr(
+        tracker, "_utcnow", lambda: start + timedelta(seconds=179)
+    )
+    tracker._handle_coordinator_update()
+    assert tracker.location_name == "travelling"
+
+    monkeypatch.setattr(
+        tracker, "_utcnow", lambda: start + timedelta(seconds=180)
+    )
+    tracker._handle_coordinator_update()
+    assert tracker.location_name == "away"
+
+
+def test_gps_location_is_available_on_tracker_and_sensor():
+    """Coordinates are available through both tracking entity types."""
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "speed_kmh": 0,
+                "zone_state": "Home",
+                "lat": -33.8688,
+                "lon": 151.2093,
+            }
+        }
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+    sensor = TrackMyRideGpsLocationSensor(coordinator, entry, "veh1")
+
+    assert tracker.latitude == pytest.approx(-33.8688)
+    assert tracker.longitude == pytest.approx(151.2093)
+    assert tracker.extra_state_attributes["latitude"] == pytest.approx(-33.8688)
+    assert tracker.extra_state_attributes["longitude"] == pytest.approx(151.2093)
+    assert sensor.native_value == "-33.868800, 151.209300"
+    assert sensor.extra_state_attributes == {
+        "latitude": -33.8688,
+        "longitude": 151.2093,
+    }
 
 
 def test_entity_skips_write_when_unchanged(monkeypatch):

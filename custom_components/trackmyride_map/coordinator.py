@@ -152,7 +152,7 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
     async def _ensure_zone_map(self) -> None:
         """Populate the zone cache when needed, throttled to once per TTL."""
 
-        now = datetime.utcnow()
+        now = self._utcnow()
         if (
             self._last_zones_fetch
             and now - self._last_zones_fetch < self._zones_cache_ttl

@@ -36,6 +36,7 @@ _ENTITY_LABELS = {
     "acc_counter": "Engine On Time",
     "internal_battery": "Internal Battery",
     "zone": "Zone",
+    "gps_location": "GPS Location",
     "external_power": "External Power",
     "engine": "Engine",
 }
