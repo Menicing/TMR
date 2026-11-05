@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from homeassistant.components.device_tracker.const import SourceType
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
@@ -15,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import COORDINATOR, DOMAIN, LOGGER_NAME
+from .const import COORDINATOR, DOMAIN, LOGGER_NAME, TRAVELLING_STOP_DELAY
 from .coordinator import TrackMyRideDataCoordinator
 
 LOGGER = logging.getLogger(LOGGER_NAME)
@@ -59,6 +60,8 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
 
     _attr_has_entity_name = False
     _attr_icon = "mdi:car-connected"
+    _attr_location_accuracy: float | None = None
+    _attr_source_type = SourceType.GPS
 
     def __init__(
         self,
@@ -73,6 +76,8 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         self._attr_name = None
         self._attr_icon = "mdi:car-connected"
         self._last_snapshot: tuple | None = None
+        self._stopped_since: datetime | None = None
+        self._sync_from_coordinator(self._utcnow())
 
     @property
     def _vehicle(self) -> dict | None:
@@ -83,32 +88,55 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         )
 
     @property
-    def latitude(self) -> float | None:
-        return self._vehicle.get("lat") if self._vehicle else None
-
-    @property
-    def longitude(self) -> float | None:
-        return self._vehicle.get("lon") if self._vehicle else None
-
-    @property
-    def source_type(self) -> SourceType:
-        return SourceType.GPS
-
-    @property
-    def gps_accuracy(self) -> float | None:
-        return None
-
-    @property
     def extra_state_attributes(self) -> dict:
         if not self._vehicle:
             return {}
         return {
+            "latitude": self._vehicle.get("lat"),
+            "longitude": self._vehicle.get("lon"),
             "speed_kmh": self._vehicle.get("speed_kmh"),
             "volts": self._vehicle.get("volts"),
             "last_comms": self._vehicle.get("last_comms"),
             "rego": self._vehicle.get("rego"),
             "last_update": self._vehicle.get("timestamp_dt_utc"),
         }
+
+    def _sync_from_coordinator(self, now: datetime) -> None:
+        """Update Home Assistant's tracker attributes from coordinator data."""
+        vehicle = self._vehicle
+        if not vehicle:
+            self._attr_latitude = None
+            self._attr_longitude = None
+            self._attr_location_name = None
+            self._stopped_since = None
+            return
+
+        self._attr_latitude = vehicle.get("lat")
+        self._attr_longitude = vehicle.get("lon")
+        speed = vehicle.get("speed_kmh")
+        if speed is not None and speed > 0:
+            self._stopped_since = None
+            self._attr_location_name = "travelling"
+            return
+
+        zone_state = vehicle.get("zone_state")
+        zone_name = zone_state.strip() if isinstance(zone_state, str) else ""
+        if zone_name:
+            self._stopped_since = None
+            self._attr_location_name = zone_name
+            return
+
+        if getattr(self, "_attr_location_name", None) == "travelling":
+            self._stopped_since = self._stopped_since or now
+            if now - self._stopped_since < timedelta(seconds=TRAVELLING_STOP_DELAY):
+                return
+
+        self._stopped_since = None
+        self._attr_location_name = "away"
+
+    def _utcnow(self) -> datetime:
+        """Return the current UTC time; kept separate for deterministic tests."""
+        return datetime.now(UTC)
 
     @property
     def available(self) -> bool:
@@ -134,10 +162,12 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
     @callback
     def _handle_coordinator_update(self) -> None:
         """Write state only when values change."""
+        self._sync_from_coordinator(self._utcnow())
         snapshot = (
             self.latitude,
             self.longitude,
             self.extra_state_attributes,
+            self.location_name,
         )
         if snapshot == self._last_snapshot:
             return

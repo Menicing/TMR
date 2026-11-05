@@ -1,12 +1,13 @@
 {
   "domain": "trackmyride_map",
   "name": "Track My Ride",
-  "version": "0.5.0",
+  "version": "0.7.1",
   "documentation": "https://github.com/Menicing/TMR",
   "issue_tracker": "https://github.com/Menicing/TMR/issues",
   "requirements": ["aiohttp>=3.9.0"],
   "codeowners": ["@Menicing"],
   "config_flow": true,
   "iot_class": "cloud_polling",
+  "integration_type": "service",
   "loggers": ["custom_components.trackmyride_map"]
 }

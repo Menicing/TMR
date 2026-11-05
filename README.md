@@ -29,10 +29,11 @@ The integration uses Home Assistant Config Entries with an Options flow:
 
 - One `device_tracker` entity is created per vehicle with:
   - `latitude`/`longitude`, `source_type = gps`
-  - Attributes: `speed_kmh`, `volts`, `last_comms`, `rego`, `last_update`
+  - State `travelling` while moving. A transition from `travelling` to `away` is delayed for three minutes so normal traffic-light, congestion, and roadwork stops do not end a trip. Resolved zones still take precedence while stopped.
+  - Attributes: `latitude`, `longitude`, `speed_kmh`, `volts`, `last_comms`, `rego`, `last_update`
 - Unique IDs come directly from the TrackMyRide `unique_id` field.
 - Additional entities per vehicle:
-  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes).
+  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes), and `GPS Location` (formatted coordinates with numeric latitude/longitude attributes).
   - Binary sensors: `External Power` (power) and `Engine` (running).
 
 > If icons are missing, ensure `icon.png`/`logo.png` exist in `custom_components/trackmyride_map` (add the binary files via normal git/GitHub upload outside Codex).
@@ -54,5 +55,14 @@ The integration uses Home Assistant Config Entries with an Options flow:
 
 ## Releases / Updating
 
-- HACS requires a Git tag/release for versioned updates. Create releases using tags that follow `vX.Y.Z` and keep the manifest `version` in sync.
-- The tag name must be `v0.1.0` when the manifest version is `0.1.0` (and similarly for future releases). This allows HACS to detect the semantic version instead of falling back to a commit hash.
+- HACS uses GitHub releases to show friendly semantic versions and expose pending
+  updates through Home Assistant's `update` entities. Without a release, HACS falls
+  back to displaying a short commit hash such as `6a41e27`.
+- Merging a manifest version change into `main` runs the `Publish HACS release`
+  workflow. It creates a `vX.Y.Z` tag and GitHub release from the manifest version,
+  allowing HACS to discover the release during its next metadata refresh and offer
+  the update through Home Assistant.
+- Keep `manifest.json` on a three-part semantic version. For example, manifest
+  version `0.7.1` is automatically published as release and tag `v0.7.1`.
+- The workflow is idempotent and can also be run manually from GitHub Actions if a
+  metadata refresh or previous workflow run needs to be retried.

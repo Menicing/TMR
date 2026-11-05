@@ -48,6 +48,7 @@ async def async_setup_entry(
                     TrackMyRideAccCounterSensor(coordinator, entry, vehicle_id),
                     TrackMyRideInternalBatterySensor(coordinator, entry, vehicle_id),
                     TrackMyRideZoneSensor(coordinator, entry, vehicle_id),
+                    TrackMyRideGpsLocationSensor(coordinator, entry, vehicle_id),
                 ]
             )
         if new_entities:
@@ -254,4 +255,37 @@ class TrackMyRideZoneSensor(TrackMyRideSensorBase):
             "zone_ids": self._vehicle.get("zone_ids", []),
             "zone_names": self._vehicle.get("zone_names", []),
             "zone_count": self._vehicle.get("zone_count", 0),
+        }
+
+
+class TrackMyRideGpsLocationSensor(TrackMyRideSensorBase):
+    """Human-readable GPS coordinate sensor for dashboards and automations."""
+
+    _attr_icon = "mdi:crosshairs-gps"
+
+    def __init__(
+        self,
+        coordinator: TrackMyRideDataCoordinator,
+        entry: ConfigEntry,
+        vehicle_id: str,
+    ) -> None:
+        super().__init__(coordinator, entry, vehicle_id, "gps_location", "GPS Location")
+
+    @property
+    def native_value(self) -> str | None:
+        if not self._vehicle:
+            return None
+        latitude = self._vehicle.get("lat")
+        longitude = self._vehicle.get("lon")
+        if latitude is None or longitude is None:
+            return None
+        return f"{latitude:.6f}, {longitude:.6f}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float | None]:
+        if not self._vehicle:
+            return {"latitude": None, "longitude": None}
+        return {
+            "latitude": self._vehicle.get("lat"),
+            "longitude": self._vehicle.get("lon"),
         }

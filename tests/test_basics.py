@@ -24,6 +24,15 @@ def test_manifest_version_semver():
     assert re.match(r"^\d+\.\d+\.\d+$", version), f"Invalid version: {version}"
 
 
+def test_release_workflow_tracks_manifest_version():
+    """Ensure HACS releases are generated from the integration manifest version."""
+
+    workflow = Path(".github/workflows/publish-release.yml").read_text()
+    assert "custom_components/trackmyride_map/manifest.json" in workflow
+    assert "tag=v$version" in workflow
+    assert 'gh release create "$TAG"' in workflow
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
