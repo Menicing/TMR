@@ -20,6 +20,11 @@ DEFAULT_MINUTES = 60
 THROTTLE_BACKOFF_INITIAL = 5
 THROTTLE_BACKOFF_MAX = 300
 
+# Keep a vehicle in the travelling state through ordinary signal and congestion
+# stops. Traffic-signal cycles commonly reach 120-180 seconds, so a three-minute
+# observation window avoids treating a routine traffic stop as the end of a trip.
+TRAVELLING_STOP_DELAY = 180
+
 COORDINATOR = "coordinator"
 
 LOGGER_NAME = "custom_components.trackmyride_map"

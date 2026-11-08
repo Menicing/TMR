@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import COORDINATOR, DOMAIN, LOGGER_NAME
+from .const import COORDINATOR, DOMAIN, LOGGER_NAME, TRAVELLING_STOP_DELAY
 from .coordinator import TrackMyRideDataCoordinator
 
 LOGGER = logging.getLogger(LOGGER_NAME)
@@ -113,6 +113,57 @@ class TrackMyRideDeviceTracker(
         self._attr_latitude = vehicle.get("lat")
         self._attr_longitude = vehicle.get("lon")
 
+    def _sync_from_coordinator(self, now: datetime) -> None:
+        """Update Home Assistant's tracker attributes from coordinator data."""
+        vehicle = self._vehicle
+        if not vehicle:
+            self._attr_latitude = None
+            self._attr_longitude = None
+            self._attr_location_name = None
+            self._stopped_since = None
+            return
+
+        self._attr_latitude = vehicle.get("lat")
+        self._attr_longitude = vehicle.get("lon")
+        speed = vehicle.get("speed_kmh")
+        if speed is not None and speed > 0:
+            self._stopped_since = None
+            self._attr_location_name = "travelling"
+            return
+
+        zone_state = vehicle.get("zone_state")
+        zone_name = zone_state.strip() if isinstance(zone_state, str) else ""
+        if zone_name:
+            self._stopped_since = None
+            self._attr_location_name = zone_name
+            return
+
+        if getattr(self, "_attr_location_name", None) == "travelling":
+            self._stopped_since = self._stopped_since or now
+            if now - self._stopped_since < timedelta(seconds=TRAVELLING_STOP_DELAY):
+                return
+
+        self._stopped_since = None
+        self._attr_location_name = "away"
+
+    def _utcnow(self) -> datetime:
+        """Return the current UTC time; kept separate for deterministic tests."""
+        return datetime.now(UTC)
+
+    @property
+    def location_name(self) -> str | None:
+        if not self._vehicle:
+            return None
+        speed = self._vehicle.get("speed_kmh")
+        if speed is not None and speed > 0:
+            return "travelling"
+        zone_state = self._vehicle.get("zone_state")
+        if isinstance(zone_state, str):
+            zone_state = zone_state.strip()
+        else:
+            zone_state = ""
+        return zone_state or "away"
+
     @property
     def available(self) -> bool:
         return self._vehicle is not None
@@ -137,6 +188,7 @@ class TrackMyRideDeviceTracker(
             self.longitude,
             self.location_accuracy,
             self.extra_state_attributes,
+            self.location_name,
         )
         if snapshot == self._last_snapshot:
             return
