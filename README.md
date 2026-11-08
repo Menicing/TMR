@@ -22,18 +22,30 @@ The integration uses Home Assistant Config Entries with an Options flow:
 | API base URL | TrackMyRide endpoint (defaults to `https://app.trackmyride.com.au/v2/php/api.php`). |
 | API key | TrackMyRide API key (required). |
 | User key | TrackMyRide user key (required). |
-| Poll interval | Select 15/30/60/120/300 seconds (default: 60s). Backoff increases temporarily after failures. |
 | Minutes window | `devices#get` window for recent points (0–4320 minutes, default: 60). |
 
 ## Entities
 
 - One `device_tracker` entity is created per vehicle with:
-  - `latitude`/`longitude`, `source_type = gps`
-  - Attributes: `speed_kmh`, `volts`, `last_comms`, `rego`, `last_update`
+  - Native `latitude`/`longitude` properties and `source_type = gps`, allowing the
+    entity to appear on Home Assistant maps.
+  - Home Assistant's native zone-derived state: `home`, `not_home`, or the name of
+    the smallest matching custom zone.
+  - GPS attributes: `gps_accuracy`, speed (m/s and km/h), the UTC timestamp of the
+    last valid GPS fix, and vehicle registration when available.
 - Unique IDs come directly from the TrackMyRide `unique_id` field.
 - Additional entities per vehicle:
-  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes).
+  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), and `Zone` (the TrackMyRide API zone with parsed zone IDs/count attributes).
   - Binary sensors: `External Power` (power) and `Engine` (running).
+
+### Location history
+
+Home Assistant's Recorder stores device-tracker coordinate changes, so no separate
+location database is required. Recorder and History are enabled by default. If you
+use `recorder` entity filters, make sure the TMR `device_tracker` entities are not
+excluded. A Map card with a non-zero **Hours to show** value displays their recorded
+route. The integration rejects malformed coordinate pairs and retains the last valid
+fix rather than moving a vehicle to a partial or out-of-range location.
 
 > If icons are missing, ensure `icon.png`/`logo.png` exist in `custom_components/trackmyride_map` (add the binary files via normal git/GitHub upload outside Codex).
 
@@ -54,5 +66,14 @@ The integration uses Home Assistant Config Entries with an Options flow:
 
 ## Releases / Updating
 
-- HACS requires a Git tag/release for versioned updates. Create releases using tags that follow `vX.Y.Z` and keep the manifest `version` in sync.
-- The tag name must be `v0.1.0` when the manifest version is `0.1.0` (and similarly for future releases). This allows HACS to detect the semantic version instead of falling back to a commit hash.
+- HACS uses GitHub releases to show friendly semantic versions and expose pending
+  updates through Home Assistant's `update` entities. Without a release, HACS falls
+  back to displaying a short commit hash such as `6a41e27`.
+- Merging a manifest version change into `main` runs the `Publish HACS release`
+  workflow. It creates a `vX.Y.Z` tag and GitHub release from the manifest version,
+  allowing HACS to discover the release during its next metadata refresh and offer
+  the update through Home Assistant.
+- Keep `manifest.json` on a three-part semantic version. For example, manifest
+  version `0.7.1` is automatically published as release and tag `v0.7.1`.
+- The workflow is idempotent and can also be run manually from GitHub Actions if a
+  metadata refresh or previous workflow run needs to be retried.

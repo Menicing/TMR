@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from homeassistant.components.device_tracker.const import SourceType
-from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import COORDINATOR, DOMAIN, LOGGER_NAME
 from .coordinator import TrackMyRideDataCoordinator
@@ -24,7 +21,7 @@ LOGGER = logging.getLogger(LOGGER_NAME)
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up device tracker entities from config entry."""
     coordinator: TrackMyRideDataCoordinator = hass.data[DOMAIN][entry.entry_id][
@@ -54,11 +51,16 @@ async def async_setup_entry(
     _process_new_data()
 
 
-class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], TrackerEntity):
+class TrackMyRideDeviceTracker(
+    CoordinatorEntity[TrackMyRideDataCoordinator], TrackerEntity
+):
     """Representation of a TrackMyRide vehicle."""
 
-    _attr_has_entity_name = False
+    _attr_entity_category = None
+    _attr_has_entity_name = True
     _attr_icon = "mdi:car-connected"
+    _attr_location_accuracy = 0.0
+    _attr_source_type = SourceType.GPS
 
     def __init__(
         self,
@@ -73,6 +75,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         self._attr_name = None
         self._attr_icon = "mdi:car-connected"
         self._last_snapshot: tuple | None = None
+        self._update_from_latest_data()
 
     @property
     def _vehicle(self) -> dict | None:
@@ -83,42 +86,36 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
         )
 
     @property
-    def latitude(self) -> float | None:
-        return self._vehicle.get("lat") if self._vehicle else None
-
-    @property
-    def longitude(self) -> float | None:
-        return self._vehicle.get("lon") if self._vehicle else None
-
-    @property
-    def source_type(self) -> SourceType:
-        return SourceType.GPS
-
-    @property
-    def gps_accuracy(self) -> float | None:
-        return None
-
-    @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         if not self._vehicle:
             return {}
-        return {
-            "speed_kmh": self._vehicle.get("speed_kmh"),
-            "volts": self._vehicle.get("volts"),
-            "last_comms": self._vehicle.get("last_comms"),
-            "rego": self._vehicle.get("rego"),
-            "last_update": self._vehicle.get("timestamp_dt_utc"),
-        }
+        attrs: dict[str, Any] = {}
+        speed_kmh = self._vehicle.get("speed_kmh")
+        if speed_kmh is not None:
+            # Match the Companion App's standard location attribute (m/s) while
+            # retaining the API-native km/h value for existing automations.
+            attrs["speed"] = speed_kmh / 3.6
+            attrs["speed_kmh"] = speed_kmh
+        if (last_update := self._vehicle.get("timestamp_dt_utc")) is not None:
+            attrs["last_gps_update"] = last_update
+        if (rego := self._vehicle.get("rego")):
+            attrs["rego"] = rego
+        return attrs
+
+    def _update_from_latest_data(self) -> None:
+        """Update native Home Assistant GPS properties from coordinator data."""
+        vehicle = self._vehicle
+        if not vehicle:
+            self._attr_latitude = None
+            self._attr_longitude = None
+            return
+
+        self._attr_latitude = vehicle.get("lat")
+        self._attr_longitude = vehicle.get("lon")
 
     @property
     def available(self) -> bool:
         return self._vehicle is not None
-
-    @property
-    def name(self) -> str | None:
-        if not self._vehicle:
-            return "Track My Ride Vehicle"
-        return self._vehicle.get("name") or f"TrackMyRide {self._vehicle_id}"
 
     @property
     def device_info(self) -> DeviceInfo | None:
@@ -126,7 +123,7 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
             return None
         return DeviceInfo(
             identifiers={(DOMAIN, self._vehicle_id)},
-            name=self.name,
+            name=self._vehicle.get("name") or f"TrackMyRide {self._vehicle_id}",
             manufacturer="TrackMyRide",
             model="Tracker",
         )
@@ -134,9 +131,11 @@ class TrackMyRideDeviceTracker(CoordinatorEntity[DataUpdateCoordinator], Tracker
     @callback
     def _handle_coordinator_update(self) -> None:
         """Write state only when values change."""
+        self._update_from_latest_data()
         snapshot = (
             self.latitude,
             self.longitude,
+            self.location_accuracy,
             self.extra_state_attributes,
         )
         if snapshot == self._last_snapshot:

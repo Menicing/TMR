@@ -77,6 +77,29 @@ def test_retry_after_seconds_header_sets_next_allowed(monkeypatch):
     assert data_second == coordinator.data
 
 
+def test_throttle_next_allowed_uses_response_time_not_pre_request_now(monkeypatch):
+    """Throttle handling uses the response time when calculating next_allowed_at."""
+
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=2)
+    session = _FakeSession([_FakeResponse(429, headers={"Retry-After": "10"})])
+    client = _make_client(session)
+    coordinator = TrackMyRideDataCoordinator(
+        HomeAssistant(), client, {CONF_MINUTES_WINDOW: 60}
+    )
+    coordinator.data = {"veh1": {"name": "Unit Test"}}
+
+    times = [t0, t1]
+
+    def _fake_utcnow():
+        return times.pop(0) if times else t1
+
+    monkeypatch.setattr(coordinator, "_utcnow", _fake_utcnow)
+    asyncio.run(coordinator._async_update_data())
+
+    assert coordinator._next_allowed_at == t1 + timedelta(seconds=10)
+
+
 def test_retry_after_http_date_header_sets_next_allowed(monkeypatch):
     """HTTP-date Retry-After header sets next_allowed_at correctly."""
 

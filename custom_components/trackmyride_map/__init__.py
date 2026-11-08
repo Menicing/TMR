@@ -144,6 +144,14 @@ async def _migrate_registries(
     for entity_entry in er.async_entries_for_config_entry(
         entity_registry, entry.entry_id
     ):
+        if (
+            entity_entry.entity_id.startswith("sensor.")
+            and entity_entry.unique_id.endswith("_gps_location")
+        ):
+            # v0.7 briefly added a duplicate coordinate sensor. Native
+            # device_tracker properties are the supported map/history source.
+            entity_registry.async_remove(entity_entry.entity_id)
+            continue
         vehicle_id, short_name = _derive_entity_parts(entity_entry.unique_id)
         if not short_name:
             continue

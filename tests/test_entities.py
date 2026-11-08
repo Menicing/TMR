@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from custom_components.trackmyride_map.binary_sensor import (
@@ -10,6 +12,7 @@ from custom_components.trackmyride_map.binary_sensor import (
 )
 from custom_components.trackmyride_map.coordinator import (
     _as_datetime_from_epoch,
+    _as_valid_coordinates,
     _minutes_to_timedelta,
     _normalize_device,
     _parse_zone_ids,
@@ -22,7 +25,11 @@ from custom_components.trackmyride_map.sensor import (
     TrackMyRideVoltsSensor,
     TrackMyRideZoneSensor,
 )
-from custom_components.trackmyride_map.device_tracker import TrackMyRideDeviceTracker
+from custom_components.trackmyride_map.device_tracker import (
+    TrackMyRideDeviceTracker,
+    async_setup_entry as async_setup_tracker_entry,
+)
+from custom_components.trackmyride_map.const import COORDINATOR, DOMAIN
 from tests.conftest import _FakeConfigEntry  # noqa: PLC2701
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -216,8 +223,147 @@ def test_device_tracker_attributes_cleanup():
     assert "comms_delta" not in attrs
     assert "comms_delta_seconds" not in attrs
     assert "last_update_epoch" not in attrs
-    assert attrs["last_update"] == "2023-01-01T00:00:00+00:00"
-    assert attrs["last_comms"] == "9 seconds"
+    assert "latitude" not in attrs
+    assert "longitude" not in attrs
+    assert "volts" not in attrs
+    assert "last_comms" not in attrs
+    assert attrs["last_gps_update"] == "2023-01-01T00:00:00+00:00"
+    assert attrs["speed"] == pytest.approx(12 / 3.6)
+    assert attrs["speed_kmh"] == 12
+
+
+def test_tracker_leaves_zone_state_to_home_assistant():
+    """Coordinates, rather than an API location name, drive native HA zones."""
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "speed_kmh": 5,
+                "zone_state": "Depot",
+                "lat": -37.8,
+                "lon": 144.9,
+            }
+        }
+    )
+    entry = _FakeConfigEntry()
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
+
+    assert tracker.location_name is None
+    assert tracker.latitude == pytest.approx(-37.8)
+    assert tracker.longitude == pytest.approx(144.9)
+
+
+def test_tracker_writes_state_when_coordinates_change():
+    """A coordinate-only update is written for Recorder and map history."""
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "lat": -33.8688,
+                "lon": 151.2093,
+                "timestamp_dt_utc": "2026-01-01T00:00:00+00:00",
+            }
+        }
+    )
+    tracker = TrackMyRideDeviceTracker(coordinator, _FakeConfigEntry(), "veh1")
+    writes: list[tuple[float | None, float | None]] = []
+    tracker.async_write_ha_state = lambda: writes.append(  # type: ignore[assignment]
+        (tracker.latitude, tracker.longitude)
+    )
+
+    tracker._handle_coordinator_update()
+    coordinator.data["veh1"].update(
+        {
+            "lat": -33.8699,
+            "lon": 151.2104,
+            "timestamp_dt_utc": "2026-01-01T00:00:10+00:00",
+        }
+    )
+    tracker._handle_coordinator_update()
+
+    assert writes[-1] == pytest.approx((-33.8699, 151.2104))
+    assert len(writes) == 2
+
+
+def test_tracker_platform_creates_one_stable_entity_per_device():
+    """The platform exposes every API vehicle as one native tracker."""
+    coordinator = _make_coordinator(
+        {
+            "veh1": {
+                "name": "Vehicle 1",
+                "lat": -33.8688,
+                "lon": 151.2093,
+            },
+            "veh2": {"name": "Vehicle 2", "lat": -37.8136, "lon": 144.9631},
+        }
+    )
+    entry = _FakeConfigEntry(entry_id="entry-1")
+    hass = type(
+        "FakeHass",
+        (),
+        {"data": {DOMAIN: {entry.entry_id: {COORDINATOR: coordinator}}}},
+    )()
+    added: list[TrackMyRideDeviceTracker] = []
+
+    asyncio.run(async_setup_tracker_entry(hass, entry, added.extend))
+
+    assert [tracker.unique_id for tracker in added] == ["veh1", "veh2"]
+    assert all(
+        tracker.device_info.identifiers == {(DOMAIN, tracker.unique_id)}
+        for tracker in added
+    )
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [
+        (91, 10),
+        (-91, 10),
+        (10, 181),
+        (10, -181),
+        ("nan", 10),
+        (10, "inf"),
+        (None, 10),
+        (True, 10),
+    ],
+)
+def test_invalid_coordinate_pairs_are_rejected(latitude, longitude):
+    """Invalid or partial GPS fixes cannot move a tracker."""
+    assert _as_valid_coordinates(latitude, longitude) is None
+
+
+def test_invalid_new_fix_preserves_last_valid_location():
+    """A malformed API point cannot replace a previously valid GPS fix."""
+    previous = {
+        "veh1": {
+            "lat": -33.8688,
+            "lon": 151.2093,
+            "speed_kmh": 25.0,
+            "timestamp_epoch": 1_700_000_000,
+            "timestamp_dt_utc": _as_datetime_from_epoch(1_700_000_000),
+        }
+    }
+    normalized = _normalize_device(
+        {
+            "unique_id": "veh1",
+            "aaData": [
+                {
+                    "lat": 999,
+                    "lng": 151.5,
+                    "speed": 80,
+                    "epoch": 1_800_000_000,
+                }
+            ],
+        },
+        previous,
+    )
+
+    assert normalized is not None
+    _, data = normalized
+    assert data["lat"] == pytest.approx(-33.8688)
+    assert data["lon"] == pytest.approx(151.2093)
+    assert data["speed_kmh"] == pytest.approx(25.0)
+    assert data["timestamp_epoch"] == 1_700_000_000
 
 
 def test_entity_skips_write_when_unchanged(monkeypatch):

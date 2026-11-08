@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Mapping
@@ -84,13 +85,14 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
         except TrackMyRideThrottleError as exc:
             self._last_http_status = exc.status
             self._throttle_count += 1
-            delay = _retry_delay_from_headers(exc.headers, now)
+            throttle_now = self._utcnow()
+            delay = _retry_delay_from_headers(exc.headers, throttle_now)
             if delay is None:
                 delay = min(
                     THROTTLE_BACKOFF_INITIAL * (2 ** (self._throttle_count - 1)),
                     THROTTLE_BACKOFF_MAX,
                 )
-            self._next_allowed_at = now + timedelta(seconds=delay)
+            self._next_allowed_at = throttle_now + timedelta(seconds=delay)
             self._throttle_logged_until = None
             return self.data or {}
         except TrackMyRideEndpointError as exc:
@@ -151,7 +153,7 @@ class TrackMyRideDataCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
     async def _ensure_zone_map(self) -> None:
         """Populate the zone cache when needed, throttled to once per TTL."""
 
-        now = datetime.utcnow()
+        now = self._utcnow()
         if (
             self._last_zones_fetch
             and now - self._last_zones_fetch < self._zones_cache_ttl
@@ -181,6 +183,26 @@ def _as_int(value: Any, fallback: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _as_valid_coordinates(
+    latitude: Any, longitude: Any
+) -> tuple[float, float] | None:
+    """Return a valid WGS84 coordinate pair or None."""
+    if isinstance(latitude, bool) or isinstance(longitude, bool):
+        return None
+    lat = _as_float(latitude)
+    lon = _as_float(longitude)
+    if (
+        lat is None
+        or lon is None
+        or not math.isfinite(lat)
+        or not math.isfinite(lon)
+        or not -90 <= lat <= 90
+        or not -180 <= lon <= 180
+    ):
+        return None
+    return lat, lon
 
 
 def _retry_delay_from_headers(
@@ -266,18 +288,18 @@ def _normalize_device(
     zone_names = _map_zone_names(zone_ids, zone_map or {})
 
     if point:
-        lat = _as_float(point.get("lat"), lat)
-        lon = _as_float(point.get("lng") or point.get("lon"), lon)
-        speed_kmh = _as_float(point.get("speed"), speed_kmh)
-        volts = _as_float(point.get("volts"), volts)
-        timestamp_epoch = _as_int(
-            point.get("epoch") or raw_device.get("last_data_at_epoch"),
-            fallback=timestamp_epoch,
-        )
-    else:
-        timestamp_epoch = _as_int(
-            raw_device.get("last_data_at_epoch"), fallback=timestamp_epoch
-        )
+        point_longitude = point.get("lng")
+        if point_longitude is None:
+            point_longitude = point.get("lon")
+        coordinates = _as_valid_coordinates(point.get("lat"), point_longitude)
+        if coordinates is not None:
+            lat, lon = coordinates
+            speed_kmh = _as_float(point.get("speed"), speed_kmh)
+            volts = _as_float(point.get("volts"), volts)
+            timestamp_epoch = _as_int(
+                point.get("epoch") or raw_device.get("last_data_at_epoch"),
+                fallback=timestamp_epoch,
+            )
 
     timestamp_dt_utc = _as_datetime_from_epoch(timestamp_epoch, timestamp_dt_utc)
 

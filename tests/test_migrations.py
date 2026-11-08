@@ -8,6 +8,7 @@ import pytest
 from custom_components.trackmyride_map import _migrate_registries
 from custom_components.trackmyride_map.binary_sensor import TrackMyRideEngineBinarySensor
 from custom_components.trackmyride_map.const import DOMAIN
+from custom_components.trackmyride_map.device_tracker import TrackMyRideDeviceTracker
 from custom_components.trackmyride_map.sensor import TrackMyRideVoltsSensor
 from custom_components.trackmyride_map.util import format_comms_delta
 from tests.conftest import _FakeConfigEntry  # noqa: PLC2701
@@ -31,8 +32,9 @@ def test_device_info_not_service_entry_type():
     entry = _FakeConfigEntry()
     sensor = TrackMyRideVoltsSensor(coordinator, entry, "veh1")
     binary = TrackMyRideEngineBinarySensor(coordinator, entry, "veh1")
+    tracker = TrackMyRideDeviceTracker(coordinator, entry, "veh1")
 
-    for entity in (sensor, binary):
+    for entity in (tracker, sensor, binary):
         device_info = entity.device_info
         assert device_info is not None
         assert device_info.entry_type is None
@@ -118,6 +120,26 @@ def test_entity_registry_migration_respects_user_defined_name():
     assert migrated_entry is not None
     assert migrated_entry.name == "My Custom Voltage Name"
     assert migrated_entry.original_name == "Road King External Voltage"
+
+
+def test_registry_migration_removes_duplicate_gps_sensor():
+    """The short-lived coordinate sensor is removed in favor of device_tracker."""
+
+    hass = HomeAssistant()
+    entry = _FakeConfigEntry(entry_id="gps_sensor_cleanup")
+    coordinator = _make_coordinator({"veh-cleanup": {"name": "Road King"}})
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "veh-cleanup_gps_location",
+        config_entry=entry,
+        suggested_object_id="road_king_gps_location",
+    )
+
+    asyncio.run(_migrate_registries(hass, entry, coordinator))
+
+    assert entity_registry.get("sensor.road_king_gps_location") is None
 
 
 def test_format_comms_delta_two_levels_and_minus_one():
