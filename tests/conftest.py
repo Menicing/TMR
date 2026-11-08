@@ -293,6 +293,9 @@ def _prime_stub_modules():
                 setattr(entry, key, value)
             return entry
 
+        def async_remove(self, entity_id):
+            self._entities.pop(entity_id, None)
+
         def async_entries_for_config_entry(self, config_entry_id):
             return [
                 entry
@@ -339,6 +342,7 @@ def _prime_stub_modules():
         return entities
 
     entity_platform.AddEntitiesCallback = _add_entities_stub
+    entity_platform.AddConfigEntryEntitiesCallback = _add_entities_stub
     helpers.entity_platform = entity_platform
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
 
@@ -355,6 +359,8 @@ def _prime_stub_modules():
     )
 
     class TrackerEntity:
+        _attr_location_accuracy = 0.0
+
         @property
         def latitude(self):
             return getattr(self, "_attr_latitude", None)
@@ -371,10 +377,23 @@ def _prime_stub_modules():
         def source_type(self):
             return getattr(self, "_attr_source_type", None)
 
+        @property
+        def location_accuracy(self):
+            return getattr(self, "_attr_location_accuracy", 0.0)
+
+        @property
+        def unique_id(self):
+            return getattr(self, "_attr_unique_id", None)
+
     device_tracker_config.TrackerEntity = TrackerEntity
     sys.modules["homeassistant.components.device_tracker.config_entry"] = (
         device_tracker_config
     )
+    device_tracker_mod = ModuleType("homeassistant.components.device_tracker")
+    device_tracker_mod.__path__ = []
+    device_tracker_mod.SourceType = SourceType
+    device_tracker_mod.TrackerEntity = TrackerEntity
+    sys.modules["homeassistant.components.device_tracker"] = device_tracker_mod
 
     sensor_mod = ModuleType("homeassistant.components.sensor")
 

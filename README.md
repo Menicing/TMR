@@ -22,19 +22,30 @@ The integration uses Home Assistant Config Entries with an Options flow:
 | API base URL | TrackMyRide endpoint (defaults to `https://app.trackmyride.com.au/v2/php/api.php`). |
 | API key | TrackMyRide API key (required). |
 | User key | TrackMyRide user key (required). |
-| Poll interval | Select 15/30/60/120/300 seconds (default: 60s). Backoff increases temporarily after failures. |
 | Minutes window | `devices#get` window for recent points (0–4320 minutes, default: 60). |
 
 ## Entities
 
 - One `device_tracker` entity is created per vehicle with:
-  - `latitude`/`longitude`, `source_type = gps`
-  - State `travelling` while moving. A transition from `travelling` to `away` is delayed for three minutes so normal traffic-light, congestion, and roadwork stops do not end a trip. Resolved zones still take precedence while stopped.
-  - Attributes: `latitude`, `longitude`, `speed_kmh`, `volts`, `last_comms`, `rego`, `last_update`
+  - Native `latitude`/`longitude` properties and `source_type = gps`, allowing the
+    entity to appear on Home Assistant maps.
+  - Home Assistant's native zone-derived state: `home`, `not_home`, or the name of
+    the smallest matching custom zone.
+  - GPS attributes: `gps_accuracy`, speed (m/s and km/h), the UTC timestamp of the
+    last valid GPS fix, and vehicle registration when available.
 - Unique IDs come directly from the TrackMyRide `unique_id` field.
 - Additional entities per vehicle:
-  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), `Zone` (raw zone string with parsed zone_ids/count attributes), and `GPS Location` (formatted coordinates with numeric latitude/longitude attributes).
+  - Sensors: `Odometer` (km), `External Voltage` (V), `Engine On Time` (min), `Internal Battery` (status), and `Zone` (the TrackMyRide API zone with parsed zone IDs/count attributes).
   - Binary sensors: `External Power` (power) and `Engine` (running).
+
+### Location history
+
+Home Assistant's Recorder stores device-tracker coordinate changes, so no separate
+location database is required. Recorder and History are enabled by default. If you
+use `recorder` entity filters, make sure the TMR `device_tracker` entities are not
+excluded. A Map card with a non-zero **Hours to show** value displays their recorded
+route. The integration rejects malformed coordinate pairs and retains the last valid
+fix rather than moving a vehicle to a partial or out-of-range location.
 
 > If icons are missing, ensure `icon.png`/`logo.png` exist in `custom_components/trackmyride_map` (add the binary files via normal git/GitHub upload outside Codex).
 

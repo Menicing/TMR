@@ -11,7 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from custom_components.trackmyride_map import api
+from custom_components.trackmyride_map import PLATFORMS, api
+from homeassistant.const import Platform
 
 
 def test_manifest_version_semver():
@@ -56,3 +57,9 @@ def test_imports_load():
     import custom_components.trackmyride_map.api  # noqa: F401
     import custom_components.trackmyride_map.config_flow  # noqa: F401
     import custom_components.trackmyride_map.coordinator  # noqa: F401
+
+
+def test_device_tracker_platform_is_forwarded():
+    """Ensure config entries continue loading the native tracker platform."""
+
+    assert Platform.DEVICE_TRACKER in PLATFORMS
